@@ -88,36 +88,50 @@ class KD2TreeNode(object):
     # Nearest neighbor search
     def NNSearch(self, point, min_distance, best_node):
         # (squared) distance to the data of the node
+        local_best_node = best_node
+        local_min_distance = min_distance
         dist = (self.data[0] - point[0] ) ** 2 + (self.data[1] - point[1] ) ** 2
         # update if this is a good distance
-        if dist < min_distance:
-            min_distance = dist;
-        
-        best_node = self
-        if dist == 0:
-            return (dist, best_node) # exact point match
+        if dist < local_min_distance:
+            local_min_distance = dist;
+            local_best_node = self
+            if dist == 0:
+                return (dist, local_best_node) # exact point match
             
         # Now (maybe) going through the left-right branches
         
         # CASE #1 : min_dist > distance-2-separator (split axis)
         #           This means we need to check both sides. 
         dist2barrier = abs(self.data[self.split_axis] - point[self.split_axis])
-        if dist2barrier < min_distance:
+        if dist2barrier < local_min_distance:
             if self.left != None:
-                (min_distance, best_node) = self.left.NNSearch(point, min_distance, best_node)
+                (local_min_distance, local_best_node) = self.left.NNSearch(point, local_min_distance, local_best_node)
             
             if self.right != None:
-                (min_distance, best_node) = self.right.NNSearch(point, min_distance, best_node)
+                (local_min_distance, local_best_node) = self.right.NNSearch(point, local_min_distance, local_best_node)
         
         else: 
             # Need to search the side we or on ONLY
             if point[self.split_axis] < self.data[self.split_axis]: 
                 # we are on the left
                 if self.left != None:
-                    (min_distance, best_node) = self.left.NNSearch(point, min_distance, best_node)
+                    (local_min_distance, local_best_node) = self.left.NNSearch(point, local_min_distance, local_best_node)
                 else: 
                     # We are on the right
                     if self.right != None:
-                        (min_distance, best_node) = self.right.NNSearch(point, min_distance, best_node)
+                        (local_min_distance, local_best_node) = self.right.NNSearch(point, local_min_distance, local_best_node)
         # unreachable region
-        return (min_distance, best_node)
+        return (local_min_distance, local_best_node)
+        
+        
+# Testing...   
+
+#root = KD2TreeNode(-2, 1, 0, 0, 0, 0)
+#root.insertNode(1, 2, 0, 0, 1)
+#root.insertNode(3, 5, 0, 0, 2)
+#root.insertNode(4, 1, 0, 0, 3)
+#root.insertNode(1, -1, 0, 0, 4)
+#(dist, nn) = root.NNSearch([-10, 3], INF_, root)
+#print (" Distance : " , dist)
+#print (" point : ", nn.data)
+
