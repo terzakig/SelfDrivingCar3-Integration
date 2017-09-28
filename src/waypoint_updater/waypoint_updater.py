@@ -10,7 +10,7 @@ import numpy as np
 import math
 
 import sys
-sys.setrecursionlimit(10000) # 10000 is an example, try with different values
+sys.setrecursionlimit(10000) # deep recursion (ONLY) during insertions
 
 '''
 This node will publish waypoints from the car's current position to some `x` distance ahead.
@@ -64,37 +64,77 @@ class WaypointUpdater(object):
 
     # Find the next waypoint given a car pose [x, y, theta]   
     # NOTE: For now I am assuming that the car is going in the direction
-    #       in which the way-point index increases. This probably tru, 
+    #       in which the way-point index increases. This probably true, 
     #       but we really need to verify..... So, for now theta is not used
     def findNextWaypoint(self):
         # first find the closest node in the KD-tree:
         (dist, nearest_node) = self.track_root.NNSearch([self.car_x, self.car_y], INF_, self.track_root)
-        # now this node maybe 'behind ' or 'ahead' of the car.
-        # we need to clear this out
+        
+        nearest_x = nearest_node.data[0]
+        nearest_y = nearest_node.data[1]
+        
+        # now this node maybe 'behind ' or 'ahead' of the car
+        # with repsect to its ****current heading*****
+        # So we need to take cases 
         nn_index = nearest_node.index
         next_wp_index = ( nn_index + 1 ) % self.num_waypoints
-        # compute the direction (unit) vector from the nearest waypoint 
-        # to the next:
-        ux = self.base_waypoints[next_wp_index].pose.pose.position.x - self.base_waypoints[nn_index].pose.pose.position.x
-        uy = self.base_waypoints[next_wp_index].pose.pose.position.y - self.base_waypoints[nn_index].pose.pose.position.y
+        prev_wp_index = ( nn_index - 1 ) % self.num_waypoints
+        
+        
+        # compute the direction (unit) vector from the nearest waypoint to the next:
+        ux_n = self.base_waypoints[next_wp_index].pose.pose.position.x - nearest_x
+        uy_n = self.base_waypoints[next_wp_index].pose.pose.position.y - nearest_y
         # now the norm of u:
-        norm_u = np.sqrt( ux **2 + uy ** 2 )
+        norm_u_n = np.sqrt( ux_n ** 2 + uy_n ** 2 )
         # normalizing
-        ux /= norm_u
-        uy /= norm_u
+        ux_n /= norm_u_n
+        uy_n /= norm_u_n
+        
+        
+        # similarly, compute the direction (unit) vector from the nearest waypoint to the previous:
+        ux_p = self.base_waypoints[prev_wp_index].pose.pose.position.x - nearest_x
+        uy_p = self.base_waypoints[prev_wp_index].pose.pose.position.y - nearest_y
+        # now the norm of u:
+        norm_u_p = np.sqrt( ux_p ** 2 + uy_p ** 2 )
+        # normalizing
+        ux_p /= norm_u_p
+        uy_p /= norm_u_p
+                
         
         # now get the difference vector from the nearest wp to ther car's position
-        vx = self.car_x - self.base_waypoints[nn_index].pose.pose.position.x
-        vy = self.car_y - self.base_waypoints[nn_index].pose.pose.position.y
-        # Get the dot product with v
-        dot = vx * ux + vy * uy
+        dcar_x = self.car_x - nearest_x
+        dcar_y = self.car_y - nearest_y
         
-        if dot < 0:
-            # Car is behind the nearest waypoint
-            return nn_index
+        # We need to find in which segment the car belongs:
+        # A: nearest wp to/from next wp
+        # B: neareset wp to/from previous wp       
+        
+        # Get the dot product of u_n with dcar
+        dot_n = dcar_x * ux_n + dcar_y * uy_n
+        # Also get the dot product of u_p with dcar
+        dot_p = dcar_x * ux_p + dcar_y * uy_p
+        # get the (squared)distances fropm the two segments 
+        dist_n_sq = dcar_x ** 2 + dcar_y ** 2 - dot_n ** 2
+        dist_p_sq = dcar_x ** 2 + dcar_y ** 2 - dot_p ** 2
+        
+        # now we can establish in which segment the car is
+        if (dist_n_sq < dist_p_sq): # car is between the nearest wp and the next wp in the list
+            # now we establish direction using the dot product if the direction 
+            # vector with the v_n
+            dot = np.cos(self.car_theta) * ux_n + np.sin(self.car_theta) * uy_n
+            if (dot < 0): # The car is headed in oposite direction to the waypoint ordering
+                return (nn_index, -1)
+            else: # the car is headed in the same direction as the wp ordering
+                return (next_wp_index, +1)
         else:
-            # car is ahead of the nearest waypoint
-            return next_wp_index
+            # The car is betweenm the nearest wp and the previous wp (in list ordering)
+            # We establish the direction of ascent/descent in the indexing
+            dot = np.cos(self.car_theta) * ux_p + np.sin(self.car_theta) * uy_p
+            if (dot < 0): # The car is headed in oposite direction to the waypoint ordering
+                return (nn_index, +1)
+            else: # the car is headed in the same direction as the wp ordering
+                return (prev_wp_index, -1)
+        
         
         
 
@@ -115,17 +155,18 @@ class WaypointUpdater(object):
         
         # now obtaining orientation of the car (assuming rotation about z: [0;0;1])
         self.car_theta = 2 * np.arccos(s)
+        # Constraining the angle in [-pi, pi)
         if self.car_theta > np.pi:
             self.car_theta = -(2 * np.pi - self.car_theta)
         # Now get the next waypoint....
         if self.flag_waypoints_retrieved:
-            next_wp_index = self.findNextWaypoint()
+            (next_wp_index, step) = self.findNextWaypoint()
             #rospy.logwarn("Next waypoint : %d", next_wp_index)
             #rospy.logwarn("car : (%f , %f) ", self.car_x, self.car_y)
             #rospy.logwarn("nwp : (%f , %f) ", self.base_waypoints[next_wp_index].pose.pose.position.x, self.base_waypoints[next_wp_index].pose.pose.position.y)
             
            # publish the nodes
-            self.publishWaypoints(next_wp_index)
+            self.publishWaypoints(next_wp_index, step)
     
     # returns a string that represents the waypoints as a matlab matrix            
     def getWaypointMatrixAtr(self):
@@ -138,7 +179,7 @@ class WaypointUpdater(object):
     
     # Fill a KD-tree that holds the track list
     def fillTrack(self):
-        # cumulative distance in the s-axis of the Frenet frame        
+        # cumulative arc length      
         s = 0
         wp_index = 0
         for wp in self.base_waypoints:
@@ -166,14 +207,14 @@ class WaypointUpdater(object):
     
     # This function publishes the next waypoints
     # For now it sets velocity to the same value...
-    def publishWaypoints(self, next_wp_index):
+    def publishWaypoints(self, next_wp_index, step):
         
         msg = Lane()
         #msg.header.stamp = rospy.Time
         msg.waypoints = []
+        index = next_wp_index
         for i in range(LOOKAHEAD_WPS):
             # index of the trailing waypoints 
-            index = i + next_wp_index            
             wp = Waypoint()
             wp.pose.pose.position.x = self.base_waypoints[index].pose.pose.position.x
             wp.pose.pose.position.y = self.base_waypoints[index].pose.pose.position.y
@@ -183,6 +224,9 @@ class WaypointUpdater(object):
             wp.twist.twist.linear.x = 20 # just a value...            
             # add the waypoint to the list
             msg.waypoints.append(wp)
+        
+            # increas/decrease index
+            index = (index + step) % self.num_waypoints
         
         # publish the message
         self.final_waypoints_pub.publish(msg)
