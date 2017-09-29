@@ -12,8 +12,15 @@ import cv2
 import yaml
 import numpy as np
 import random
+import math
 
 STATE_COUNT_THRESHOLD = 3
+# this means how many frames the image is delay
+# set DELAY=1 means there is no delay.
+DELAY = 1
+# if a light is more then 200m away from the car
+# we'll ignore that light
+MAX_DISTANCE_SQR = 40000
 
 class Point:
     def __init__(self, t):
@@ -55,6 +62,8 @@ class TLDetector(object):
         self.last_state = TrafficLight.UNKNOWN
         self.last_wp = -1
         self.state_count = 0
+        self.count = 0
+        self.camera_car_position = []
 
         rospy.spin()
 
@@ -77,6 +86,9 @@ class TLDetector(object):
         """
         self.has_image = True
         self.camera_image = msg
+        self.camera_car_position.append(self.pose.pose.position)
+        if len(self.camera_car_position) > DELAY:
+            self.camera_car_position.pop(0)
         light_wp, state = self.process_traffic_lights()
 
         '''
@@ -108,7 +120,7 @@ class TLDetector(object):
 
         """
         #TODO implement
-        closest_index = 0
+        closest_index = -1
         closest_dis = -1
 
         if self.waypoints is not None:
@@ -154,9 +166,15 @@ class TLDetector(object):
         # Using the pose to obatin the camera frame as rotation matrix R and 
         # a world position p (NOTEL ASSUMING THAT THE CAMERA COINCIDES WITH 
         # THE CAR'S BARYCENTER (not really correct as it is somewhat of the ground!):
-        Cx = self.pose.pose.position.x
-        Cy = self.pose.pose.position.y
-        Cz = self.pose.pose.position.z # not used but hey...
+        # Cx = self.pose.pose.position.x
+        # Cy = self.pose.pose.position.y
+        # Cz = self.pose.pose.position.z # not used but hey...
+        Cx = self.camera_car_position[0].x
+        Cy = self.camera_car_position[0].y
+        Cz = self.camera_car_position[0].z
+        # print(Px, Py, Pz)
+        # print(Cx, Cy, Cz)
+        # print('=========')
         
         # get orientation (just the scalar part of the the quaternion)
         s = self.pose.pose.orientation.w # quaternion scalar
@@ -165,7 +183,7 @@ class TLDetector(object):
         theta = 2 * np.arccos(s)
         # Constraining the angle in [-pi, pi)
         if theta > np.pi:
-            theta = -(2 * np.pi - self.car_theta)
+            theta = -(2 * np.pi - theta)
 
         # transforming the world point to the camera frame as:
         #
@@ -179,7 +197,7 @@ class TLDetector(object):
         p_camera = [ np.cos(theta) * (Px - Cx) + np.sin(theta) * (Py - Cy) , \
                      -np.sin(theta) * (Px - Cx) + np.cos(theta) * (Py - Cy) , \
                      Pz - Cz]
-                                                        
+        # print(p_camera)                                                        
 
 
         # NOTE: From the simulator, it appears from the change in the angle 
@@ -195,67 +213,28 @@ class TLDetector(object):
         # thus, there are two ways of obtaining the image projection:
         
         
-        x1 =  fx * ( -p_camera[1] ) / p_camera[0] + 0.5*image_width
-        y1 =  fy * (  p_camera[2] ) / p_camera[0] + 0.5*image_height
+        
+        # see https://discussions.udacity.com/t/focal-length-wrong/358568
+        if fx < 10:
+            fx = 2574
+            fy = 2744
+            p_camera[2] -= 1.0
+            c_x = image_width/2 - 30
+            c_y = image_height + 50
 
-        # or,
+        x = int(-fx * p_camera[1] / p_camera[0] + c_x)
+        y = int(-fy * p_camera[2] / p_camera[0] + c_y)
 
-        x2 =  fx * ( -p_camera[1] ) / p_camera[0] + 0.5*image_width
-        y2 =  fy * ( -p_camera[2] ) / p_camera[0] + 0.5*image_height
+        return (x,y)
 
-        # obviously, only one is correct, but needs to be veryfied with a 
-        # known point and oits projection, which we dont have. But I would guess 
-        # that x2, y2 are the correct ones. However, it never hurts to try both
-        # jus to be sure...
-
-        # choosing the second... 
-        # TODO-TODO-TODO: TRY also (x1, y1) !!!! 
-
-        return (x2, y2)
-
-
-    def project_to_image_plane_old(self, point_in_world):
-        """Project point from 3D world coordinates to 2D camera image location
-
-        Args:
-            point_in_world (Point): 3D location of a point in the world
-
-        Returns:
-            x (int): x coordinate of target point in image
-            y (int): y coordinate of target point in image
-
-        """
-
-        fx = self.config['camera_info']['focal_length_x']
-        fy = self.config['camera_info']['focal_length_y']
-        image_width = self.config['camera_info']['image_width']
-        image_height = self.config['camera_info']['image_height']
-
-        # get transform between pose of camera and world frame
-        trans = None
-        rot = None
-        try:
-            now = rospy.Time.now()
-            self.listener.waitForTransform("/base_link",
-                  "/world", now, rospy.Duration(1.0))
-            (trans, rot) = self.listener.lookupTransform("/base_link",
-                  "/world", now)
-
-        except (tf.Exception, tf.LookupException, tf.ConnectivityException):
-            rospy.logerr("Failed to find camera to map transform")
-
-        #TODO Use tranform and rotation to calculate 2D position of light in image
-
-        M = self.listener.fromTranslationRotation(trans, rot)
-        p_world = np.array([[point_in_world.x], [point_in_world.y], [point_in_world.z], [1.0]])
-        p_camera = np.dot(M, p_world)
-        # print('=====')
-        # print(p_camera)
-
-        x = -fx * p_camera[1] / p_camera[0] + 0.5*image_width
-        y = -fy * p_camera[2] / p_camera[0] + 0.5*image_height
-
-        return (x, y)
+    def in_image(self, x, y):
+        if x is None or y is None:
+            return False
+        if x < 0 or x >= self.config['camera_info']['image_width']:
+            return False
+        if y < 0 or y >= self.config['camera_info']['image_height']:
+            return False
+        return True
 
     def get_light_state(self, light):
         """Determines the current color of the traffic light
@@ -274,18 +253,30 @@ class TLDetector(object):
         cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
 
         x, y = self.project_to_image_plane(light.pose.pose.position)
-        # print(light)
-        # print(x,y)
+
         #TODO use light location to zoom in on traffic light in image
         image_width = self.config['camera_info']['image_width']
         image_height = self.config['camera_info']['image_height']
 
-        # ret = cv2.rectangle(cv_image, (x-20,y), (x+20,y+100), (0, 0, 255))
-        # cv2.imwrite('/home/student/Desktop/New/' + str(random.random()) + '.jpg', ret)
-        # print('saveimg')
-
-        #Get classification
-        return self.light_classifier.get_classification(cv_image)
+        # Actually this range is enough. 
+        # But we just use a bigger rectangle to make sure the light is in this region
+        # ret = cv2.rectangle(cv_image, (x-20,y-50), (x+20,y+50), (0, 0, 255))
+        left = x - 50
+        right = x + 50
+        top = 30
+        bottom = y + 75
+        
+        state = TrafficLight.UNKNOWN
+        if self.in_image(left, top) and self.in_image(right, bottom):
+            roi = cv_image[top:bottom, left:right]
+            self.count += 1
+            # cv2.imwrite('/home/student/Desktop/New/' + ("%.3d" % self.count) + '.jpg', roi)
+            # state = self.light_classifier.get_classification(roi)
+            # if state == 0:
+            #     print(self.count, 'RED')
+            # else:
+            #     print(self.count, 'UNKNOWN')
+        return state
 
     def process_traffic_lights(self):
         """Finds closest visible traffic light, if one exists, and determines its
@@ -305,13 +296,18 @@ class TLDetector(object):
 
             #TODO find the closest visible traffic light (if one exists)
             for i, stop_line in enumerate(stop_line_positions):
+                dis = (stop_line[0]-self.pose.pose.position.x)**2 + \
+                    (stop_line[1]-self.pose.pose.position.y)**2 
+                if dis > MAX_DISTANCE_SQR:
+                    continue
                 stop_line_wp = self.get_closest_waypoint(Point(stop_line))
                 if stop_line_wp >= car_position:
                     if (light_wp == -1) or (light_wp > stop_line_wp):
+                        # print(stop_line_wp, car_position, light_wp)
                         light_wp = stop_line_wp
                         light = self.lights[i]
-
         if light:
+            # print(light_wp, self.count)
             state = self.get_light_state(light)
             return light_wp, state
         self.waypoints = None
