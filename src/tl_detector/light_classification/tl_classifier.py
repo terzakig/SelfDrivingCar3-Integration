@@ -11,6 +11,8 @@ class TLClassifier(object):
         self.upper_red_2 = np.array([180, 255, 255])
         self.lower_green = np.array([35, 43, 46])
         self.upper_green = np.array([77, 255, 255])
+        self.lower_yellow = np.array([20, 100, 100])
+        self.upper_yellow = np.array([30, 255, 255])
 
     def get_classification(self, image):
         """Determines the color of the traffic light in the image
@@ -29,9 +31,18 @@ class TLClassifier(object):
             cv2.inRange(hsv, self.lower_red_2, self.upper_red_2)
         mask_green = cv2.inRange(hsv, self.lower_green, self.upper_green)
 
-        red = cv2.countNonZero(mask_red)
+        mask_yellow = cv2.inRange(hsv, self.lower_yellow, self.upper_yellow)
+
+        #TODO: Yellow/Orange detection to be done
+
+        red   = cv2.countNonZero(mask_red)
         green = cv2.countNonZero(mask_green)
+        yellow = cv2.countNonZero(mask_yellow)
         
-        if red > green:
+        if red > green and red > yellow:
             return TrafficLight.RED
+        elif green > red and green > yellow:
+            return TrafficLight.GREEN
+        elif yellow > red and yellow > green:
+            return TrafficLight.YELLOW
         return TrafficLight.UNKNOWN
