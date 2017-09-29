@@ -165,7 +165,7 @@ class TLDetector(object):
         theta = 2 * np.arccos(s)
         # Constraining the angle in [-pi, pi)
         if theta > np.pi:
-            theta = -(2 * np.pi - self.car_theta)
+            theta = -(2 * np.pi - theta)
 
         # transforming the world point to the camera frame as:
         #
