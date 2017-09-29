@@ -123,7 +123,98 @@ class TLDetector(object):
         return closest_index
 
 
+    # George: Here's my version of project_to_image_plane
+    #     I am avoiding the TransformListener object as I am not sure about how
+    #     to configure it without having doubts. The transform is easy to 
+    #     work-out directly from the pose vector and gives me control over the 
+    #     coordinate frame.
     def project_to_image_plane(self, point_in_world):
+        """Project point from 3D world coordinates to 2D camera image location
+
+        Args:
+            point_in_world (Point): 3D location of a point in the world
+
+        Returns:
+            x (int): x coordinate of target point in image
+            y (int): y coordinate of target point in image
+
+        """
+        # Retreving camera intronsics
+        fx = self.config['camera_info']['focal_length_x']
+        fy = self.config['camera_info']['focal_length_y']
+        # image size        
+        image_width = self.config['camera_info']['image_width']
+        image_height = self.config['camera_info']['image_height']
+
+        # caching the world coordinates of the point
+        Px = point_in_world.x
+        Py = point_in_world.y
+        Pz = point_in_world.z
+
+        # Using the pose to obatin the camera frame as rotation matrix R and 
+        # a world position p (NOTEL ASSUMING THAT THE CAMERA COINCIDES WITH 
+        # THE CAR'S BARYCENTER (not really correct as it is somewhat of the ground!):
+        Cx = self.pose.pose.position.x
+        Cy = self.pose.pose.position.y
+        Cz = self.pose.pose.position.z # not used but hey...
+        
+        # get orientation (just the scalar part of the the quaternion)
+        s = self.pose.pose.orientation.w # quaternion scalar
+        
+        # now obtaining orientation of the car (assuming rotation about z: [0;0;1])
+        theta = 2 * np.arccos(s)
+        # Constraining the angle in [-pi, pi)
+        if theta > np.pi:
+            theta = -(2 * np.pi - self.car_theta)
+
+        # transforming the world point to the camera frame as:
+        #
+        #               Mc = R' * (Mw - p)
+
+        #        where R' = [ cos(theta)  sin(theta)   0; 
+        #                   -sin(theta)  cos(theta)   0;
+        #                      0              0      1]
+        #
+        # Thus,
+        p_camera = [ np.cos(theta) * (Px - Cx) + np.sin(theta) * (Py - Cy) , \
+                     -np.sin(theta) * (Px - Cx) + np.cos(theta) * (Py - Cy) , \
+                     Pz - Cz]
+                                                        
+
+
+        # NOTE: From the simulator, it appears from the change in the angle 
+        # that the positive direction of rotation is counter-clockwise. This 
+        # means that there are two possible frame arrangements:
+        #
+        # a) A RIGHT-HAND frame: In this frame, z - points upwards (oposite to the 
+        # image y axis)and y points to the left (oposite to the image x-axis)
+        #
+        # b) A LEFT_HAND frame: In this frame, z-points downwards (same as the
+        #    image y-axis) and y points left (oposite to the image x-axis).
+        #
+        # thus, there are two ways of obtaining the image projection:
+        
+        
+        x1 =  fx * ( -p_camera[1] ) / p_camera[0] + 0.5*image_width
+        y1 =  fy * (  p_camera[2] ) / p_camera[0] + 0.5*image_height
+
+        # or,
+
+        x2 =  fx * ( -p_camera[1] ) / p_camera[0] + 0.5*image_width
+        y2 =  fy * ( -p_camera[2] ) / p_camera[0] + 0.5*image_height
+
+        # obviously, only one is correct, but needs to be veryfied with a 
+        # known point and oits projection, which we dont have. But I would guess 
+        # that x2, y2 are the correct ones. However, it never hurts to try both
+        # jus to be sure...
+
+        # choosing the second... 
+        # TODO-TODO-TODO: TRY also (x1, y1) !!!! 
+
+        return (x2, y2)
+
+
+    def project_to_image_plane_old(self, point_in_world):
         """Project point from 3D world coordinates to 2D camera image location
 
         Args:
