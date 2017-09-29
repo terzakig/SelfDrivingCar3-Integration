@@ -270,12 +270,12 @@ class TLDetector(object):
         if self.in_image(left, top) and self.in_image(right, bottom):
             roi = cv_image[top:bottom, left:right]
             self.count += 1
-            # cv2.imwrite('/home/student/Desktop/New/' + ("%.3d" % self.count) + '.jpg', roi)
-            # state = self.light_classifier.get_classification(roi)
-            # if state == 0:
-            #     print(self.count, 'RED')
-            # else:
-            #     print(self.count, 'UNKNOWN')
+            # perform light state classification
+            state = self.light_classifier.get_classification(roi)
+            # rospy.logwarn("TL state classified: %d, state count %d", state, self.state_count)
+            # debug only
+            # if self.count > STATE_COUNT_THRESHOLD and self.count < 10: # save some imgs, not all 
+            #     cv2.imwrite('/home/student/Tests/imgs/' + ("%.3d-%d" % (self.count, state)) + '.jpg', roi)
         return state
 
     def process_traffic_lights(self):
