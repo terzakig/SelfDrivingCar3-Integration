@@ -3,10 +3,11 @@
 import rospy
 from std_msgs.msg import Bool
 from dbw_mkz_msgs.msg import ThrottleCmd, SteeringCmd, BrakeCmd, SteeringReport
-from geometry_msgs.msg import TwistStamped
-import math
+from geometry_msgs.msg import TwistStamped, PoseStamped
+from styx_msgs.msg import Lane
 
-from twist_controller import Controller
+
+from longitudinal_controller import LongController
 
 '''
 You can build this node only after you have built (or partially built) the `waypoint_updater` node.
@@ -53,11 +54,25 @@ class DBWNode(object):
         self.brake_pub = rospy.Publisher('/vehicle/brake_cmd',
                                          BrakeCmd, queue_size=1)
 
-        # TODO: Create `TwistController` object
-        # self.controller = TwistController(<Arguments you wish to provide>)
+        # init controller
+        self.longControl = LongController(vehicle_mass,brake_deadband,decel_limit,accel_limit,wheel_radius)
 
-        # TODO: Subscribe to all the topics you need to
+        # init variables
+        self.dbw_enabled = False
+        self.velocity = None
+        self.pose = None
+        self.twist = None
+        self.waypoints = None
+        self.last_timestamp = 0.0
 
+        # Subscribe to needed topics
+        rospy.Subscriber('/vehicle/dbw_enabled', Bool, self.dbw_cb, queue_size=1)
+        rospy.Subscriber('/final_waypoints', Lane, self.waypoints_cb, queue_size=1)
+        rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb, queue_size=1)
+        rospy.Subscriber('/current_velocity', TwistStamped, self.velocity_cb, queue_size=1)
+        rospy.Subscriber('/twist_cmd', TwistStamped, self.twist_cb, queue_size=1)
+	
+        
         self.loop()
 
     def loop(self):
@@ -72,6 +87,38 @@ class DBWNode(object):
             #                                                     <any other argument you need>)
             # if <dbw is enabled>:
             #   self.publish(throttle, brake, steer)
+            now = rospy.get_rostime()
+            timestamp = now.to_sec()
+            delta_t = timestamp - self.last_timestamp
+            self.last_timestamp = timestamp
+            
+            flag_dataRX = self.velocity is not None and \
+                          self.pose is not None and \
+                          self.twist is not None and \
+                          self.waypoints is not None
+                          
+            throttle = 0.0
+            brake = 0.0
+            steer = 0.0
+            
+            #rospy.logwarn("delta_t: %f" % delta_t)
+            
+            if self.dbw_enabled and flag_dataRX and delta_t >0:
+                # longitudinal control
+                current_spd = self.velocity.linear.x
+                target_spd = self.twist.linear.x
+                throttle, brake =  self.longControl.control(target_spd,current_spd,delta_t)
+                
+                rospy.logwarn("target_spd: %f" % target_spd + "; current_spd: %f" % current_spd)
+                rospy.logwarn("throttle: %f" % throttle + "; brake: %f" % brake)
+                
+                # lateral control
+                steer = 0.0
+                
+            self.publish(throttle, brake, steer)
+            
+
+            
             rate.sleep()
 
     def publish(self, throttle, brake, steer):
@@ -91,6 +138,26 @@ class DBWNode(object):
         bcmd.pedal_cmd_type = BrakeCmd.CMD_TORQUE
         bcmd.pedal_cmd = brake
         self.brake_pub.publish(bcmd)
+
+    def dbw_cb(self, message):
+        # extract dbw_enabled variable
+        self.dbw_enabled = bool(message.data)
+
+    def velocity_cb(self, message):
+        # extract velocity
+        self.velocity = message.twist
+
+    def pose_cb(self, message):
+        # extract position
+        self.pose = message.pose
+
+    def twist_cb(self, message):
+        # extract the twist message """
+        self.twist = message.twist
+
+    def waypoints_cb(self, message):
+        # extract waypoints
+        self.waypoints = message.waypoints
 
 
 if __name__ == '__main__':

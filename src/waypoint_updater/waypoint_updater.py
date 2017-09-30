@@ -27,7 +27,7 @@ as well as to verify your TL classifier.
 TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
-LOOKAHEAD_WPS = 3 # Number of waypoints we will publish. You can change this number
+LOOKAHEAD_WPS = 200 # Number of waypoints we will publish. You can change this number
 
 
 class WaypointUpdater(object):
@@ -221,7 +221,7 @@ class WaypointUpdater(object):
             # Velocity
             # TODO - TODO : Fill it with sensible velocities using
             #               feedback from the traffic light node etc...
-            wp.twist.twist.linear.x = 20 # just a value...            
+            wp.twist.twist.linear.x = 8.9408 # just a value 20 mph...            
             # add the waypoint to the list
             msg.waypoints.append(wp)
         
