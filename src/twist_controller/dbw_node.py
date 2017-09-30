@@ -8,6 +8,7 @@ from styx_msgs.msg import Lane
 
 
 from longitudinal_controller import LongController
+from yaw_controller import YawController
 
 '''
 You can build this node only after you have built (or partially built) the `waypoint_updater` node.
@@ -56,6 +57,8 @@ class DBWNode(object):
 
         # init controller
         self.longControl = LongController(vehicle_mass,brake_deadband,decel_limit,accel_limit,wheel_radius)
+        min_speed = 0.3
+        self.yawControl = YawController(wheel_base, steer_ratio, min_speed, max_lat_accel, max_steer_angle)
 
         # init variables
         self.dbw_enabled = False
@@ -113,7 +116,8 @@ class DBWNode(object):
                 rospy.logwarn("throttle: %f" % throttle + "; brake: %f" % brake)
                 
                 # lateral control
-                steer = 0.0
+                target_yawRate = self.twist.angular.z
+                steer = self.yawControl.get_steering(target_spd, target_yawRate, current_spd)
                 
             self.publish(throttle, brake, steer)
             
