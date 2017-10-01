@@ -8,7 +8,7 @@ from styx_msgs.msg import Lane
 
 
 from longitudinal_controller import LongController
-from yaw_controller import YawController
+from lateral_controller import LatController
 
 '''
 You can build this node only after you have built (or partially built) the `waypoint_updater` node.
@@ -55,10 +55,14 @@ class DBWNode(object):
         self.brake_pub = rospy.Publisher('/vehicle/brake_cmd',
                                          BrakeCmd, queue_size=1)
 
+        # below this speed no control any more
+        # and we hold the vehicle if target speed is zero 
+        min_speed = 0.1
+
+
         # init controller
         self.longControl = LongController(vehicle_mass,brake_deadband,decel_limit,accel_limit,wheel_radius)
-        min_speed = 0.3
-        self.yawControl = YawController(wheel_base, steer_ratio, min_speed, max_lat_accel, max_steer_angle)
+        self.latControl = LatController(wheel_base, steer_ratio, min_speed, max_lat_accel, max_steer_angle)
 
         # init variables
         self.dbw_enabled = False
@@ -112,18 +116,22 @@ class DBWNode(object):
                 target_spd = self.twist.linear.x
                 throttle, brake =  self.longControl.control(target_spd,current_spd,delta_t)
                 
-                rospy.logwarn("target_spd: %f" % target_spd + "; current_spd: %f" % current_spd)
-                rospy.logwarn("throttle: %f" % throttle + "; brake: %f" % brake)
+                #rospy.logwarn("target_spd: %f" % target_spd + "; current_spd: %f" % current_spd)
+                #rospy.logwarn("throttle: %f" % throttle + "; brake: %f" % brake)
                 
                 # lateral control
                 target_yawRate = self.twist.angular.z
-                steer = self.yawControl.get_steering(target_spd, target_yawRate, current_spd)
+                CTE = 0.0 # TODO!!!!
+                steer = self.latControl.control(target_spd, target_yawRate, current_spd, CTE, delta_t)
                 
-            self.publish(throttle, brake, steer)
-            
+            else:
+                self.longControl.reset()
+                self.latControl.reset()
+                
 
-            
+            self.publish(throttle, brake, steer)
             rate.sleep()
+
 
     def publish(self, throttle, brake, steer):
         tcmd = ThrottleCmd()
