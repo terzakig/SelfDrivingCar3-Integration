@@ -60,13 +60,66 @@ class WaypointUpdater(object):
         self.track = None
         self.track_root = None # the root of the kd-tree
 
+        # for debugging...........
+        #self.strcounter = 0
+        #self.dispstr = "["
+
         rospy.spin()
 
+
+    # This is my new function that returns the NEXT (NOT nearest)
+    # waypoint. It may work better than the original,although it
+    # assumes that the car is going along the ascending direction of the
+    # waypoint indexes in the published list.
+    # I just employed the criterion from the planning assignment.
+    # NOTE: I am brute-forcing nearest neighbor as there seems to be a problem 
+    def findNextWaypoint(self):
+        # first find the closest node in the KD-tree:
+#        (dist, nearest_node) = self.track_root.NNSearch([self.car_x, self.car_y], INF_, self.track_root)
+#        
+#        map_x = nearest_node.data[0]
+#        map_y = nearest_node.data[1]
+    
+        # use brute force minimum distance
+        nn_index = 0
+        map_x = self.base_waypoints[nn_index].pose.pose.position.x
+        map_y = self.base_waypoints[nn_index].pose.pose.position.y
+        mindist = (self.car_x - map_x) ** 2 + (self.car_y - map_y) ** 2
+        
+        for i in range(1, self.num_waypoints):
+            x = self.base_waypoints[i].pose.pose.position.x
+            y = self.base_waypoints[i].pose.pose.position.y
+            
+            dist = (self.car_x - x) ** 2 + (self.car_y - y) ** 2            
+            if (dist < mindist):
+                mindist = dist
+                map_x = x
+                map_y = y
+                nn_index = i
+        
+        # now this node maybe 'behind ' or 'ahead' of the car
+        # with repsect to its ****current heading*****
+        # So we need to take cases 
+        #nn_index = nearest_node.index
+        next_wp_index = ( nn_index + 1 ) % self.num_waypoints
+        
+        # and here's the criterion used in the 
+        # planning assignment
+        
+        heading = np.arctan2( (map_y - self.car_y), (map_x - self.car_x) )
+        angle = abs(self.car_theta - heading);
+        
+        if(angle > np.pi / 4):     
+            return (next_wp_index, +1);
+        else:
+            return (nn_index, +1)
+
+    
     # Find the next waypoint given a car pose [x, y, theta]   
     # NOTE: For now I am assuming that the car is going in the direction
     #       in which the way-point index increases. This probably true, 
     #       but we really need to verify..... So, for now theta is not used
-    def findNextWaypoint(self):
+    def findNextWaypoint_old(self):
         # first find the closest node in the KD-tree:
         (dist, nearest_node) = self.track_root.NNSearch([self.car_x, self.car_y], INF_, self.track_root)
         
@@ -114,13 +167,13 @@ class WaypointUpdater(object):
         # Also get the dot product of u_p with dcar
         dot_p = dcar_x * ux_p + dcar_y * uy_p
         # get the (squared)distances fropm the two segments 
-        dist_n_sq = dcar_x ** 2 + dcar_y ** 2 - dot_n ** 2
-        dist_p_sq = dcar_x ** 2 + dcar_y ** 2 - dot_p ** 2
-        
+        #dist_n_sq = dcar_x ** 2 + dcar_y ** 2 - dot_n ** 2
+        #dist_p_sq = dcar_x ** 2 + dcar_y ** 2 - dot_p ** 2
         # now we can establish in which segment the car is
-        if (dist_n_sq < dist_p_sq): # car is between the nearest wp and the next wp in the list
-            # now we establish direction using the dot product if the direction 
-            # vector with the v_n
+        #if (dist_n_sq < dist_p_sq): # car is between the nearest wp and the next wp in the list      
+        if dot_n > 0: # The car is in the closest-to-next waypoint segment 
+            # now we establish direction using the dot product of 
+            # the car's direction vector with the v_n
             dot = np.cos(self.car_theta) * ux_n + np.sin(self.car_theta) * uy_n
             if (dot < 0): # The car is headed in oposite direction to the waypoint ordering
                 return (nn_index, -1)
@@ -206,13 +259,25 @@ class WaypointUpdater(object):
         rospy.logwarn("%d waypoints inserted in the KD tree. ", self.num_waypoints)
     
     # This function publishes the next waypoints
-    # For now it sets velocity to the same value...
+    # For now it sets velocity to the same value...        
     def publishWaypoints(self, next_wp_index, step):
         
         msg = Lane()
         #msg.header.stamp = rospy.Time
         msg.waypoints = []
         index = next_wp_index
+        
+        # populate the display array
+#        self.dispstr += str(self.car_x) + " , " + str(self.car_y) + " , "+\
+#                   str(self.base_waypoints[next_wp_index].pose.pose.position.x) + " , " + \
+#                   str(self.base_waypoints[next_wp_index].pose.pose.position.y) + ";"
+#       self.strcounter += 1
+        
+#        if (self.strcounter == 900):
+#            self.strcounter = 0
+#            self.dispstr += "["
+#            rospy.logwarn(self.dispstr)
+#            self.dispstr = "["
         for i in range(LOOKAHEAD_WPS):
             # index of the trailing waypoints 
             wp = Waypoint()
@@ -221,16 +286,17 @@ class WaypointUpdater(object):
             # Velocity
             # TODO - TODO : Fill it with sensible velocities using
             #               feedback from the traffic light node etc...
-            wp.twist.twist.linear.x = 8.9408 # just a value 20 mph...            
+            wp.twist.twist.linear.x = 20 # just a value...            
             # add the waypoint to the list
             msg.waypoints.append(wp)
         
             # increas/decrease index
             index = (index + step) % self.num_waypoints
+            
         
         # publish the message
         self.final_waypoints_pub.publish(msg)
-            
+        
         
     
     def waypoints_cb(self, lanemsg):
@@ -247,7 +313,7 @@ class WaypointUpdater(object):
             
     def traffic_cb(self, msg):
         # TODO: Callback for /traffic_waypoint message. Implement
-       # rospy.logwarn("Traffic waypoint int32 : %d", msg.data)
+        rospy.logwarn("Traffic waypoint int32 : %d", msg.data)
         pass
 
     def obstacle_cb(self, msg):

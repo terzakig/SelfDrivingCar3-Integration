@@ -50,10 +50,13 @@ class TLDetector(object):
         sub6 = rospy.Subscriber('/image_color', Image, self.image_cb)
 
         config_string = rospy.get_param("/traffic_light_config")
+        rospy.logwarn("The parameter string is : %s", config_string )
         self.config = yaml.load(config_string)
 
         self.upcoming_red_light_pub = rospy.Publisher('/traffic_waypoint', Int32, queue_size=1)
-
+        #debug: publishing the roi just to see if it contains the light
+        self.roi_pub = rospy.Publisher('/traffic_roi', Image, queue_size=1)
+        
         self.bridge = CvBridge()
         self.light_classifier = TLClassifier()
         self.listener = tf.TransformListener()
@@ -64,7 +67,13 @@ class TLDetector(object):
         self.state_count = 0
         self.count = 0
         self.camera_car_position = []
-
+       
+        
+        # x-margin is the margin in pixels that corrspondes to a
+        # 5 meter distance from the traffic light along the y-axis (x in image).
+        # we use this margin to search for the red pixels instead of a fixed one        
+        self.x_margin = 50 # default is 50 (Yuda)
+        
         rospy.spin()
 
     def pose_cb(self, msg):
@@ -72,7 +81,7 @@ class TLDetector(object):
 
     def waypoints_cb(self, waypoints):
         self.waypoints = waypoints
-
+       
     def traffic_cb(self, msg):
         self.lights = msg.lights
 
@@ -165,10 +174,7 @@ class TLDetector(object):
 
         # Using the pose to obatin the camera frame as rotation matrix R and 
         # a world position p (NOTEL ASSUMING THAT THE CAMERA COINCIDES WITH 
-        # THE CAR'S BARYCENTER (not really correct as it is somewhat of the ground!):
-        # Cx = self.pose.pose.position.x
-        # Cy = self.pose.pose.position.y
-        # Cz = self.pose.pose.position.z # not used but hey...
+        # THE CAR'S BARYCENTER 
         Cx = self.camera_car_position[0].x
         Cy = self.camera_car_position[0].y
         Cz = self.camera_car_position[0].z
@@ -187,7 +193,7 @@ class TLDetector(object):
 
         # transforming the world point to the camera frame as:
         #
-        #               Mc = R' * (Mw - p)
+        #               Pc = R' * (Pw - C)
 
         #        where R' = [ cos(theta)  sin(theta)   0; 
         #                   -sin(theta)  cos(theta)   0;
@@ -213,17 +219,45 @@ class TLDetector(object):
         # thus, there are two ways of obtaining the image projection:
         
         
-        
+        # =============== Udacity Forums ====================================
         # see https://discussions.udacity.com/t/focal-length-wrong/358568
-        if fx < 10:
-            fx = 2574
-            fy = 2744
-            p_camera[2] -= 1.0
-            c_x = image_width/2 - 30
-            c_y = image_height + 50
-
+#        if fx < 10:
+#            fx = 2574
+#            fy = 2744
+#            p_camera[2] -= 1.0  # to account for the elevation of the camera
+#            c_x = image_width/2 - 30
+#            c_y = image_height + 50
+#        x = int(-fx * p_camera[1] / p_camera[0] + c_x)
+#        y = int(-fy * p_camera[2] / p_camera[0] + c_y)
+         # ===================================================================        
+        
+        
+        # =============== Using actual (given) intrinsics ================
+        if fx < 3 or fy < 3: 
+            # This means that intrinsics have been normalized
+            # so that they can be applied at any resolution                         
+            fx = fx * image_width
+            fy = fy * image_height
+            # MAYBE, assume that camera is 1 m above the ground (not used)
+            #p_camera[2] -= 1                       
+        # Since we dont know the intersection of the optical axis with the image,
+        # we assume it lies in the middle of it. It should work roughly....
+        c_x = image_width / 2
+        c_y = image_height / 2
+        
         x = int(-fx * p_camera[1] / p_camera[0] + c_x)
-        y = int(-fy * p_camera[2] / p_camera[0] + c_y)
+        y = int(+fy * p_camera[2] / p_camera[0] + c_y)
+        # ===============================================================
+
+        # Set the ADAPTIVE search margin for the traffic light.
+        self.x_margin = int(np.abs(5 * fx / p_camera[0])) # note the 5 metert factor
+        rospy.logwarn("X-Margin : %i", self.x_margin)
+        if (self.x_margin < 20):
+            self.x_margin = 20 # use default 20 pixels if too small margin
+        if (self.x_margin > 200): # use maximum margin 200 pixels (just to avoid large roi images when out of range)
+            self.x_margin = 200 
+        #debug
+        #rospy.logwarn("Projection in pixels : x : %g , y : %f  ", x, y )
 
         return (x,y)
 
@@ -261,22 +295,41 @@ class TLDetector(object):
         # Actually this range is enough. 
         # But we just use a bigger rectangle to make sure the light is in this region
         # ret = cv2.rectangle(cv_image, (x-20,y-50), (x+20,y+50), (0, 0, 255))
-        left = x - 50
-        right = x + 50
+        #left = x - 50
+        left = x - self.x_margin        
+        #right = x + 50
+        right = x + self.x_margin        
         top = 30
         bottom = y + 75
         
         state = TrafficLight.UNKNOWN
         if self.in_image(left, top) and self.in_image(right, bottom):
             roi = cv_image[top:bottom, left:right]
+            # skip if roi not set (it may happen, despite the in_image tests)
+            if (roi is None): 
+                rospy.logwarn("ROI image is None!")
+                return state
+            # skip if roi is singular (i.e. single row or column)
+            if (roi.shape[0] < 2 or roi.shape[1] < 2):
+                return state
+            #debug (publish the ROI  shape)
+            #rospy.logwarn("left : %i , right: %i, top: %i, bottom: %i", left, right, top, bottom )
+            # @@@@ New topic : Piblishing the ROI image in "/traffic_roi"   
+            bridge = CvBridge()
+            img = bridge.cv2_to_imgmsg(roi, "bgr8")
+            self.roi_pub.publish(img)
             self.count += 1
             # perform light state classification
             state = self.light_classifier.get_classification(roi)
-            # rospy.logwarn("TL state classified: %d, state count %d", state, self.state_count)
+            #rospy.logwarn("TL state classified: %d, state count %d", state, self.state_count)
             # debug only
             # if self.count > STATE_COUNT_THRESHOLD and self.count < 10: # save some imgs, not all 
             #     cv2.imwrite('/home/student/Tests/imgs/' + ("%.3d-%d" % (self.count, state)) + '.jpg', roi)
         return state
+
+   
+
+    
 
     def process_traffic_lights(self):
         """Finds closest visible traffic light, if one exists, and determines its
@@ -288,24 +341,31 @@ class TLDetector(object):
 
         """
         light = None
-        light_wp = -1
         # List of positions that correspond to the line to stop in front of for a given intersection
-        stop_line_positions = self.config['stop_light_positions']
+        stop_line_positions = self.config['stop_line_positions']
         if(self.pose):
             car_position = self.get_closest_waypoint(self.pose.pose.position)
 
-            #TODO find the closest visible traffic light (if one exists)
+            #TODO find the closest visible traffic light (if one exists)            
+            light_wp = -1           
             for i, stop_line in enumerate(stop_line_positions):
-                dis = (stop_line[0]-self.pose.pose.position.x)**2 + \
-                    (stop_line[1]-self.pose.pose.position.y)**2 
+                # computing the distance from the car to the traffic-light stop line                
+                dis = (stop_line[0] - self.pose.pose.position.x)**2 + \
+                    (stop_line[1] - self.pose.pose.position.y)**2
+                # if the distance beyond a threshold (200^2 = 40000) skip    
                 if dis > MAX_DISTANCE_SQR:
                     continue
+                # Now, if the traffic light is potentially visible, find the
+                # closest waypoint to it                
                 stop_line_wp = self.get_closest_waypoint(Point(stop_line))
+                
                 if stop_line_wp >= car_position:
                     if (light_wp == -1) or (light_wp > stop_line_wp):
-                        # print(stop_line_wp, car_position, light_wp)
+                        print(stop_line_wp, car_position, light_wp)
                         light_wp = stop_line_wp
                         light = self.lights[i]
+                        minDist2TL = dis
+        #rospy.logwarn("Found closest traffic light (waypoint) : %i" , light_wp)
         if light:
             # print(light_wp, self.count)
             state = self.get_light_state(light)
