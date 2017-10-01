@@ -35,6 +35,7 @@ class TLDetector(object):
         self.waypoints = None
         self.camera_image = None
         self.lights = []
+        self.tl_wps = []
 
         sub1 = rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
         sub2 = rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
@@ -326,12 +327,66 @@ class TLDetector(object):
             # if self.count > STATE_COUNT_THRESHOLD and self.count < 10: # save some imgs, not all 
             #     cv2.imwrite('/home/student/Tests/imgs/' + ("%.3d-%d" % (self.count, state)) + '.jpg', roi)
         return state
-
+        
+    def track_index_diff(self,index1, index2):
+        if (self.waypoints.waypoints is None):
+            return -1        
+        N = len(self.waypoints.waypoints)
+        if index2 > index1 :
+            return index2 - index1
+        else:
+            return N - index1 - 1 + index2
    
+    def process_traffic_lights(self):
+        """Finds closest visible traffic light, if one exists, and determines its
+            location and color
 
+        Returns:
+            int: index of waypoint closes to the upcoming stop line for a traffic light (-1 if none exists)
+            int: ID of traffic light color (specified in styx_msgs/TrafficLight)
+
+        """
+        if (self.waypoints is None):
+            return (-1, TrafficLight.UNKNOWN)
+        # List of positions that correspond to the line to stop in front of for a given intersection
+        stop_line_positions = self.config['stop_line_positions']
+        
+        # now, for all stop_lines find nearest points (shoudl be done ONCE
+        if (len(self.tl_wps)==0):           
+            for i, stop_line in enumerate(stop_line_positions):
+                tl_wp = self.get_closest_waypoint(Point(stop_line))
+                self.tl_wps.append( (tl_wp+1) % len(self.waypoints.waypoints) ) # +1 to give extra margin towards the traffic light
+            
+        
+        light = None
+        
+        if(self.pose):
+            car_wp = self.get_closest_waypoint(self.pose.pose.position)
+            
+            # Now find the smallest distance to a traffic light wp from the car wp:
+            minDist = self.track_index_diff(car_wp, self.tl_wps[0])
+            light_index = 0
+            for i in range(1, len(self.tl_wps)):
+                dist = self.track_index_diff(car_wp, self.tl_wps[i])
+                if dist > 150 / 0.63: #about 150 meters ON-TRACK 
+                    continue
+                if (dist < minDist):
+                    minDist = dist                    
+                    light_index = i
+            light = self.lights[light_index]
+        print("Red Traffic light index  : ", light_index)
+
+        if light:
+            # print(light_wp, self.count)
+            state = self.get_light_state(light)
+            return self.tl_wps[light_index], state
+        
+        return -1, TrafficLight.UNKNOWN
+       
+   
     
 
-    def process_traffic_lights(self):
+    def process_traffic_lights_old(self):
         """Finds closest visible traffic light, if one exists, and determines its
             location and color
 
@@ -364,7 +419,7 @@ class TLDetector(object):
                         print(stop_line_wp, car_position, light_wp)
                         light_wp = stop_line_wp
                         light = self.lights[i]
-                        minDist2TL = dis
+
         #rospy.logwarn("Found closest traffic light (waypoint) : %i" , light_wp)
         if light:
             # print(light_wp, self.count)

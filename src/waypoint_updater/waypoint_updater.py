@@ -313,7 +313,7 @@ class WaypointUpdater(object):
             
     def traffic_cb(self, msg):
         # TODO: Callback for /traffic_waypoint message. Implement
-        rospy.logwarn("Traffic waypoint int32 : %d", msg.data)
+        rospy.logwarn("Traffic light waypoint : %d", msg.data)
         pass
 
     def obstacle_cb(self, msg):
