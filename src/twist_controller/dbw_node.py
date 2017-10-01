@@ -6,6 +6,8 @@ from dbw_mkz_msgs.msg import ThrottleCmd, SteeringCmd, BrakeCmd, SteeringReport
 from geometry_msgs.msg import TwistStamped, PoseStamped
 from styx_msgs.msg import Lane
 
+import math
+import numpy as np
 
 from longitudinal_controller import LongController
 from lateral_controller import LatController
@@ -121,7 +123,8 @@ class DBWNode(object):
                 
                 # lateral control
                 target_yawRate = self.twist.angular.z
-                CTE = 0.0 # TODO!!!!
+                CTE = self.calc_CTE(self.waypoints, self.pose)
+                #rospy.logwarn("CTE: %f" % CTE)
                 steer = self.latControl.control(target_spd, target_yawRate, current_spd, CTE, delta_t)
                 
             else:
@@ -171,6 +174,34 @@ class DBWNode(object):
         # extract waypoints
         self.waypoints = message.waypoints
 
+    def calc_CTE(self, waypoints, pose):
+        # get waypoints coordinates (only 30 first points)
+        n = 30
+        points_x = np.zeros(n)
+        points_y = np.zeros(n)
+        for i in range(n):
+            points_x[i] = waypoints[i].pose.pose.position.x
+            points_y[i] = waypoints[i].pose.pose.position.y            
+        # get car's x and y position and heading angle
+        x = pose.position.x
+        y = pose.position.y
+        theta = pose.orientation.z
+        # transform points into the vehicle coordinate system:
+        points_x_car = []
+        points_y_car = []
+        # perform coordinate transformation:
+        points_carCoord_x = np.zeros(n)
+        points_carCoord_y = np.zeros(n)
+        for i in range(len(points_x)):
+            points_carCoord_x[i] = (points_y[i]-y)*math.sin(theta)-(x-points_x[i])*math.cos(theta)
+            points_carCoord_y[i] = (points_y[i]-y)*math.cos(theta)-(points_x[i]-x)*math.sin(theta)
+        # Interpolate points in the vehicle coordinate system:
+        coeffs = np.polyfit(points_carCoord_x, points_carCoord_y, 3)
+        p = np.poly1d(coeffs)
+        # distance to track is polynomial at car's position x = 0
+        CTE = p(0.0)
+
+        return CTE
 
 if __name__ == '__main__':
     DBWNode()
