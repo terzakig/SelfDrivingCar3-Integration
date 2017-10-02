@@ -20,7 +20,7 @@ class LatController(object):
         self.yawControl = YawController(wheel_base, steer_ratio, min_speed, max_lat_accel, max_steer_angle)
 
         # init PID
-        self.steer_PID = PID(kp=0.1, ki=0.001, kd=0.5)
+        self.steer_PID = PID(kp=0.05, ki=0.0005, kd=0.5)
         
     def control(self,target_spd, target_yawRate, current_spd, CTE, delta_t):
         

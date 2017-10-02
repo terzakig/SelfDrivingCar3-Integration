@@ -85,56 +85,49 @@ class DBWNode(object):
         self.loop()
 
     def loop(self):
-        rate = rospy.Rate(50) # 50Hz
+        rate = rospy.Rate(20) # 20Hz
         while not rospy.is_shutdown():
-            # TODO: Get predicted throttle, brake, and steering using `twist_controller`
-            # You should only publish the control commands if dbw is enabled
-            # throttle, brake, steering = self.controller.control(<proposed linear velocity>,
-            #                                                     <proposed angular velocity>,
-            #                                                     <current linear velocity>,
-            #                                                     <dbw status>,
-            #                                                     <any other argument you need>)
-            # if <dbw is enabled>:
-            #   self.publish(throttle, brake, steer)
-            now = rospy.get_rostime()
-            timestamp = now.to_sec()
-            delta_t = timestamp - self.last_timestamp
-            self.last_timestamp = timestamp
-            
-            flag_dataRX = self.velocity is not None and \
-                          self.pose is not None and \
-                          self.twist is not None and \
-                          self.waypoints is not None
-                          
-            throttle = 0.0
-            brake = 0.0
-            steer = 0.0
-            
-            #rospy.logwarn("delta_t: %f" % delta_t)
-            
-            if self.dbw_enabled and flag_dataRX and delta_t >0:
-                # longitudinal control
-                current_spd = self.velocity.linear.x
-                target_spd = self.twist.linear.x
-                throttle, brake =  self.longControl.control(target_spd,current_spd,delta_t)
-                
-                #rospy.logwarn("target_spd: %f" % target_spd + "; current_spd: %f" % current_spd)
-                #rospy.logwarn("throttle: %f" % throttle + "; brake: %f" % brake)
-                
-                # lateral control
-                target_yawRate = self.twist.angular.z
-                CTE = self.calc_CTE(self.waypoints, self.pose)
-                #rospy.logwarn("CTE: %f" % CTE)
-                steer = self.latControl.control(target_spd, target_yawRate, current_spd, CTE, delta_t)
-                
-            else:
-                self.longControl.reset()
-                self.latControl.reset()
-                
-
-            self.publish(throttle, brake, steer)
+            self.control_step()
             rate.sleep()
 
+    def control_step(self):
+        now = rospy.get_rostime()
+        timestamp = now.to_sec()
+        delta_t = timestamp - self.last_timestamp
+        self.last_timestamp = timestamp
+
+        flag_dataRX = self.velocity is not None and \
+                      self.pose is not None and \
+                      self.twist is not None and \
+                      self.waypoints is not None
+                      
+        throttle = 0.0
+        brake = 0.0
+        steer = 0.0
+
+        #rospy.logwarn("delta_t: %f" % delta_t)
+
+        if self.dbw_enabled and flag_dataRX and delta_t >0:
+            # longitudinal control
+            current_spd = self.velocity.linear.x
+            target_spd = self.twist.linear.x
+            throttle, brake =  self.longControl.control(target_spd,current_spd,delta_t)
+            
+            #rospy.logwarn("target_spd: %f" % target_spd + "; current_spd: %f" % current_spd)
+            #rospy.logwarn("throttle: %f" % throttle + "; brake: %f" % brake)
+            
+            # lateral control
+            target_yawRate = self.twist.angular.z
+            CTE = self.calc_CTE(self.waypoints, self.pose)
+            #rospy.logwarn("CTE: %f" % CTE)
+            steer = self.latControl.control(target_spd, target_yawRate, current_spd, CTE, delta_t)
+            
+        else:
+            self.longControl.reset()
+            self.latControl.reset()
+            
+
+        self.publish(throttle, brake, steer)
 
     def publish(self, throttle, brake, steer):
         tcmd = ThrottleCmd()
@@ -176,7 +169,9 @@ class DBWNode(object):
 
     def calc_CTE(self, waypoints, pose):
         # get waypoints coordinates (only 30 first points)
-        n = 30
+        n = min(30, len(waypoints))
+        if (n<30):
+            rospy.logerr('dbw_node: Not enough waypots received!')
         points_x = np.zeros(n)
         points_y = np.zeros(n)
         for i in range(n):

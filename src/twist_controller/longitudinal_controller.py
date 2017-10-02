@@ -4,7 +4,7 @@ from pid import PID
 from lowpass import LowPassFilter
 
 FILT_TAU_ACCEL = 0.1 # filter time constant for low pass filter long. acceleration
-TS = 0.02 # cycle time for 50 Hz 
+TS = 0.05 # cycle time for 20 Hz 
 
 LONG_JERK_LIMIT = 3.0
 

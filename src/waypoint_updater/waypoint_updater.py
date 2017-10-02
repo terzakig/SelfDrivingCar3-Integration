@@ -27,7 +27,7 @@ as well as to verify your TL classifier.
 TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
-LOOKAHEAD_WPS = 200 # Number of waypoints we will publish. You can change this number
+LOOKAHEAD_WPS = 100 # Number of waypoints we will publish. You can change this number
 
 
 class WaypointUpdater(object):
@@ -49,6 +49,7 @@ class WaypointUpdater(object):
         self.base_waypoints = None
         self.num_waypoints = -1 # just a shortcut to avoid using len() all the time
 
+        self.pose = None
         self.pose_stamp = None
         self.car_x = None
         self.car_y = None
@@ -64,7 +65,38 @@ class WaypointUpdater(object):
         #self.strcounter = 0
         #self.dispstr = "["
 
-        rospy.spin()
+        self.loop()
+
+    def loop(self):
+        rate = rospy.Rate(10) # 10Hz
+        while not rospy.is_shutdown():
+            if self.flag_waypoints_retrieved and self.pose is not None:
+                # unwrapping the vehicle pose
+                self.car_x = self.pose.position.x
+                self.car_y = self.pose.position.y
+                #car_z = self.pose.position.z # not used but hey...
+
+                # get orientation
+                s = self.pose.orientation.w # quaternion scalar
+                v1 = self.pose.orientation.x # vector part 1
+                v2 = self.pose.orientation.y # vector part 2
+                v3 = self.pose.orientation.z # vector part 3        
+                
+                # now obtaining orientation of the car (assuming rotation about z: [0;0;1])
+                self.car_theta = 2 * np.arccos(s)
+                # Constraining the angle in [-pi, pi)
+                if self.car_theta > np.pi:
+                    self.car_theta = -(2 * np.pi - self.car_theta)
+                # Now get the next waypoint....
+                if self.flag_waypoints_retrieved:
+                    (next_wp_index, step) = self.findNextWaypoint()
+                    #rospy.logwarn("Next waypoint : %d", next_wp_index)
+                    #rospy.logwarn("car : (%f , %f) ", self.car_x, self.car_y)
+                    #rospy.logwarn("nwp : (%f , %f) ", self.base_waypoints[next_wp_index].pose.pose.position.x, self.base_waypoints[next_wp_index].pose.pose.position.y)
+                    
+                   # publish the nodes
+                    self.publishWaypoints(next_wp_index, step)
+            rate.sleep()
 
 
     # This is my new function that returns the NEXT (NOT nearest)
@@ -193,33 +225,9 @@ class WaypointUpdater(object):
 
 
     def pose_cb(self, msg):
-        # unwrapping the vehicle pose
-        self.car_x = msg.pose.position.x
-        self.car_y = msg.pose.position.y
-        #car_z = msg.pose.position.z # not used but hey...
+        self.pose = msg.pose
         # get the time stamp. might be useful to calculate latency
         self.pose_stamp = msg.header.stamp
-       
-        # get orientation
-        s = msg.pose.orientation.w # quaternion scalar
-        v1 = msg.pose.orientation.x # vector part 1
-        v2 = msg.pose.orientation.y # vector part 2
-        v3 = msg.pose.orientation.z # vector part 3        
-        
-        # now obtaining orientation of the car (assuming rotation about z: [0;0;1])
-        self.car_theta = 2 * np.arccos(s)
-        # Constraining the angle in [-pi, pi)
-        if self.car_theta > np.pi:
-            self.car_theta = -(2 * np.pi - self.car_theta)
-        # Now get the next waypoint....
-        if self.flag_waypoints_retrieved:
-            (next_wp_index, step) = self.findNextWaypoint()
-            #rospy.logwarn("Next waypoint : %d", next_wp_index)
-            #rospy.logwarn("car : (%f , %f) ", self.car_x, self.car_y)
-            #rospy.logwarn("nwp : (%f , %f) ", self.base_waypoints[next_wp_index].pose.pose.position.x, self.base_waypoints[next_wp_index].pose.pose.position.y)
-            
-           # publish the nodes
-            self.publishWaypoints(next_wp_index, step)
     
     # returns a string that represents the waypoints as a matlab matrix            
     def getWaypointMatrixAtr(self):
