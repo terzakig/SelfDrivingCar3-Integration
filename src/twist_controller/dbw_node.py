@@ -107,24 +107,30 @@ class DBWNode(object):
 
         #rospy.logwarn("delta_t: %f" % delta_t)
 
-        if self.dbw_enabled and flag_dataRX and delta_t >0:
-            # longitudinal control
+        if flag_dataRX and delta_t >0:
             current_spd = self.velocity.linear.x
-            target_spd = self.twist.linear.x
-            throttle, brake =  self.longControl.control(target_spd,current_spd,delta_t)
-            
-            #rospy.logwarn("target_spd: %f" % target_spd + "; current_spd: %f" % current_spd)
-            #rospy.logwarn("throttle: %f" % throttle + "; brake: %f" % brake)
-            
-            # lateral control
-            target_yawRate = self.twist.angular.z
-            CTE = self.calc_CTE(self.waypoints, self.pose)
-            #rospy.logwarn("CTE: %f" % CTE)
-            steer = self.latControl.control(target_spd, target_yawRate, current_spd, CTE, delta_t)
-            
+            if self.dbw_enabled:
+                # longitudinal control
+                target_spd = self.twist.linear.x
+                throttle, brake =  self.longControl.control(target_spd,current_spd,delta_t)
+                
+                #rospy.logwarn("target_spd: %f" % target_spd + "; current_spd: %f" % current_spd)
+                #rospy.logwarn("throttle: %f" % throttle + "; brake: %f" % brake)
+                
+                # lateral control
+                target_yawRate = self.twist.angular.z
+                CTE = self.calc_CTE(self.waypoints, self.pose)
+                #rospy.logwarn("CTE: %f" % CTE)
+                steer = self.latControl.control(target_spd, target_yawRate, current_spd, CTE, delta_t)
+                
+            else:
+                self.longControl.reset(current_spd)
+                self.latControl.reset()
+                
         else:
-            self.longControl.reset()
+            self.longControl.reset(0.0)
             self.latControl.reset()
+        
             
 
         self.publish(throttle, brake, steer)
@@ -168,9 +174,9 @@ class DBWNode(object):
         self.waypoints = message.waypoints
 
     def calc_CTE(self, waypoints, pose):
-        # get waypoints coordinates (only 30 first points)
-        n = min(30, len(waypoints))
-        if (n<30):
+        # get waypoints coordinates (only 20 first points)
+        n = min(20, len(waypoints))
+        if (n<20):
             rospy.logerr('dbw_node: Not enough waypots received!')
         points_x = np.zeros(n)
         points_y = np.zeros(n)

@@ -29,7 +29,7 @@ class LongController(object):
         self.last_brake_actv = False # brake active
         
         # init PID
-        self.accel_PID = PID(kp=0.0, ki=0.005, kd=0.2)
+        self.accel_PID = PID(kp=1.0, ki=0.015, kd=0.1)
         
     def control(self,target_spd,current_spd,delta_t):
         
@@ -50,16 +50,27 @@ class LongController(object):
         
         # check for min and max allowed acceleration
         target_accel = max( min(target_accel, self.accel_limit), self.decel_limit)
-        
-        # calculate torque from target_accel using mass
-        trq_feedForward = target_accel * self.vehicle_mass * self.wheel_radius
-        
-        # use PID to get better control performance
-        accel_err = target_accel - accel_filt
-        trq_PID = self.accel_PID.step(accel_err, delta_t, mn=self.min_trq-trq_feedForward, mx=self.max_trq-trq_feedForward)
-        
-        # calulate overall torque
-        trq = trq_feedForward + trq_PID
+        trq = 0.0
+        if target_spd > 0.0 or current_spd > 1.0:
+            
+            trq_feedForward = 0.0
+            trq_PID = 0.0
+            if abs(spd_err) > 1.0: #use acceleration mode
+                # calculate torque from target_accel using mass
+                trq_feedForward = target_accel * self.vehicle_mass * self.wheel_radius
+                
+                # use PID to get better control performance
+                expected_spd = self.last_spd + self.last_target_accel*delta_t
+                expected_err = expected_spd - current_spd
+                trq_PID = self.accel_PID.step(expected_err, delta_t, mn=self.min_trq-trq_feedForward, mx=self.max_trq-trq_feedForward)
+            else: # use speed control only
+                trq_PID = self.accel_PID.step(spd_err, delta_t, mn=self.min_trq-trq_feedForward, mx=self.max_trq-trq_feedForward)
+                            
+            # calulate overall torque
+            trq = trq_feedForward + trq_PID
+            
+        else: # hold vehicle 
+            trq = self.min_trq
         
         # calulate throttle
         # published throttle is a percentage
@@ -90,5 +101,8 @@ class LongController(object):
         
         return throttle, brake
         
-    def reset(self):
+    def reset(self,current_spd):
         self.accel_PID.reset()
+        self.last_spd = current_spd
+        self.last_target_accel = 0.0
+

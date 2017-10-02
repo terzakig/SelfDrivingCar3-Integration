@@ -27,8 +27,8 @@ as well as to verify your TL classifier.
 TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
-LOOKAHEAD_WPS = 50 # Number of waypoints we will publish. You can change this number
-
+LOOKAHEAD_WPS = 40 # Number of waypoints we will publish. You can change this number
+MAX_SPD = 10.0
 
 class WaypointUpdater(object):
     def __init__(self):
@@ -290,6 +290,9 @@ class WaypointUpdater(object):
 #            self.dispstr += "["
 #            rospy.logwarn(self.dispstr)
 #            self.dispstr = "["
+        if self.tl_waypoint is not None:
+            dist_tl = self.distance(self.base_waypoints, index, self.tl_waypoint)
+            rospy.logwarn("Distance to red light: %f", dist_tl)
         for i in range(LOOKAHEAD_WPS):
             # index of the trailing waypoints 
             wp = Waypoint()
@@ -299,20 +302,13 @@ class WaypointUpdater(object):
             # TODO - TODO : Fill it with sensible velocities using
             #               feedback from the traffic light node etc...
             
+            
             if self.tl_waypoint is None: # no red light
-                wp.twist.twist.linear.x = 10.0 # don't go to fast
+                wp.twist.twist.linear.x = MAX_SPD # don't go to fast
             else: # red light
                 dist_tl = self.distance(self.base_waypoints, index, self.tl_waypoint)
-                if i == 0:
-                    rospy.logwarn("Distance to red light: %f", dist_tl)
-                if dist_tl < 10.:
-                    wp.twist.twist.linear.x = 0.0
-                elif dist_tl < 15.:
-                    wp.twist.twist.linear.x = 0.5
-                elif dist_tl < 25.:
-                    wp.twist.twist.linear.x = 2.5
-                else:
-                    wp.twist.twist.linear.x = 5.0
+                dist_stop = 10.0
+                wp.twist.twist.linear.x = min(max(0.0, 0.2*(dist_tl-dist_stop)), MAX_SPD)
                 
             # add the waypoint to the list
             msg.waypoints.append(wp)
