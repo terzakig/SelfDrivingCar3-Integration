@@ -27,7 +27,7 @@ as well as to verify your TL classifier.
 TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
-LOOKAHEAD_WPS = 100 # Number of waypoints we will publish. You can change this number
+LOOKAHEAD_WPS = 50 # Number of waypoints we will publish. You can change this number
 
 
 class WaypointUpdater(object):
@@ -64,6 +64,10 @@ class WaypointUpdater(object):
         # for debugging...........
         #self.strcounter = 0
         #self.dispstr = "["
+
+        # variables for traffic lights
+        self.tl_waypoint = None
+        self.last_tl_waypoint = None
 
         self.loop()
 
@@ -294,7 +298,22 @@ class WaypointUpdater(object):
             # Velocity
             # TODO - TODO : Fill it with sensible velocities using
             #               feedback from the traffic light node etc...
-            wp.twist.twist.linear.x = 20 # just a value...            
+            
+            if self.tl_waypoint is None: # no red light
+                wp.twist.twist.linear.x = 10.0 # don't go to fast
+            else: # red light
+                dist_tl = self.distance(self.base_waypoints, index, self.tl_waypoint)
+                if i == 0:
+                    rospy.logwarn("Distance to red light: %f", dist_tl)
+                if dist_tl < 10.:
+                    wp.twist.twist.linear.x = 0.0
+                elif dist_tl < 15.:
+                    wp.twist.twist.linear.x = 0.5
+                elif dist_tl < 25.:
+                    wp.twist.twist.linear.x = 2.5
+                else:
+                    wp.twist.twist.linear.x = 5.0
+                
             # add the waypoint to the list
             msg.waypoints.append(wp)
         
@@ -321,8 +340,20 @@ class WaypointUpdater(object):
             
     def traffic_cb(self, msg):
         # TODO: Callback for /traffic_waypoint message. Implement
-        rospy.logwarn("Traffic light waypoint : %d", msg.data)
-        pass
+        tl_wp = msg.data
+        if tl_wp >= 0: #red traffic light detected
+            self.tl_waypoint = tl_wp
+            if self.last_tl_waypoint is None:
+                rospy.logwarn("Red traffic light at : %d", tl_wp)
+            
+        else:
+            self.tl_waypoint = None
+            if self.last_tl_waypoint is not None:
+                rospy.logwarn("Not Red; GO!!!!")
+        
+        self.last_tl_waypoint = self.tl_waypoint
+        
+        return
 
     def obstacle_cb(self, msg):
         # TODO: Callback for /obstacle_waypoint message. We will implement it later
@@ -341,6 +372,7 @@ class WaypointUpdater(object):
             dist += dl(waypoints[wp1].pose.pose.position, waypoints[i].pose.pose.position)
             wp1 = i
         return dist
+        
 
 
 if __name__ == '__main__':

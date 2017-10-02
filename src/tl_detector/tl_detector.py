@@ -252,7 +252,7 @@ class TLDetector(object):
 
         # Set the ADAPTIVE search margin for the traffic light.
         self.x_margin = int(np.abs(5 * fx / p_camera[0])) # note the 5 metert factor
-        rospy.logwarn("X-Margin : %i", self.x_margin)
+        #rospy.logwarn("X-Margin : %i", self.x_margin)
         if (self.x_margin < 20):
             self.x_margin = 20 # use default 20 pixels if too small margin
         if (self.x_margin > 200): # use maximum margin 200 pixels (just to avoid large roi images when out of range)
@@ -374,7 +374,7 @@ class TLDetector(object):
                     minDist = dist                    
                     light_index = i
             light = self.lights[light_index]
-        print("Red Traffic light index  : ", light_index)
+        #print("Red Traffic light index  : ", light_index)
 
         if light:
             # print(light_wp, self.count)
