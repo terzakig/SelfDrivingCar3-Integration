@@ -96,9 +96,9 @@ class TLDetector(object):
         """
         self.has_image = True
         self.camera_image = msg
-        self.camera_car_position.append(self.pose.pose.position)
-        if len(self.camera_car_position) > DELAY:
-            self.camera_car_position.pop(0)
+#        self.camera_car_position.append(self.pose.pose.position)
+#        if len(self.camera_car_position) > DELAY:
+#            self.camera_car_position.pop(0)
         light_wp, state = self.process_traffic_lights()
 
         '''
@@ -176,9 +176,13 @@ class TLDetector(object):
         # Using the pose to obatin the camera frame as rotation matrix R and 
         # a world position p (NOTEL ASSUMING THAT THE CAMERA COINCIDES WITH 
         # THE CAR'S BARYCENTER 
-        Cx = self.camera_car_position[0].x
-        Cy = self.camera_car_position[0].y
-        Cz = self.camera_car_position[0].z
+#        Cx = self.camera_car_position[0].x
+#        Cy = self.camera_car_position[0].y
+#        Cz = self.camera_car_position[0].z
+        Cx = self.pose.pose.position.x
+        Cy = self.pose.pose.position.y
+        Cz = self.pose.pose.position.z
+        
         # print(Px, Py, Pz)
         # print(Cx, Cy, Cz)
         # print('=========')
@@ -332,7 +336,7 @@ class TLDetector(object):
         if (self.waypoints.waypoints is None):
             return -1        
         N = len(self.waypoints.waypoints)
-        if index2 > index1 :
+        if index2 >= index1 :
             return index2 - index1
         else:
             return N - index1 - 1 + index2
@@ -355,7 +359,7 @@ class TLDetector(object):
         if (len(self.tl_wps)==0):           
             for i, stop_line in enumerate(stop_line_positions):
                 tl_wp = self.get_closest_waypoint(Point(stop_line))
-                self.tl_wps.append( (tl_wp+1) % len(self.waypoints.waypoints) ) # +1 to give extra margin towards the traffic light
+                self.tl_wps.append( (tl_wp+7) % len(self.waypoints.waypoints) ) # +1 to give extra margin towards the traffic light
             
         
         light = None

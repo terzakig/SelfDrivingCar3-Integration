@@ -103,13 +103,64 @@ class WaypointUpdater(object):
             rate.sleep()
 
 
+    # Again trying another approach in the next waypoint without considering 
+    # orientation. This timewe use a cross product of position-minus-neareset wp
+    # and direction vector from nearest to next.
+    def findNextWaypoint(self):
+        # first find the closest node in the KD-tree:
+#        (dist, nearest_node) = self.track_root.NNSearch([self.car_x, self.car_y], INF_, self.track_root)
+#        
+#        map_x = nearest_node.data[0]
+#        map_y = nearest_node.data[1]
+    
+        # use brute force minimum distance
+        nn_index = 0
+        map_x = self.base_waypoints[nn_index].pose.pose.position.x
+        map_y = self.base_waypoints[nn_index].pose.pose.position.y
+        mindist = (self.car_x - map_x) ** 2 + (self.car_y - map_y) ** 2
+        
+        for i in range(1, self.num_waypoints):
+            x = self.base_waypoints[i].pose.pose.position.x
+            y = self.base_waypoints[i].pose.pose.position.y
+            
+            dist = (self.car_x - x) ** 2 + (self.car_y - y) ** 2            
+            if (dist < mindist):
+                mindist = dist
+                map_x = x
+                map_y = y
+                nn_index = i
+        # now this node maybe 'behind ' or 'ahead' of the car
+        # with repsect to its ****current heading*****
+        # So we need to take cases 
+        #nn_index = nearest_node.index
+        next_wp_index = ( nn_index + 1 ) % len(self.base_waypoints)
+        
+        # now the difference vector of the car's position and the direction
+        # vector v from the nearest waypoint to the next
+        vx = self.base_waypoints[next_wp_index].pose.pose.position.x - map_x
+        vy = self.base_waypoints[next_wp_index].pose.pose.position.y - map_y
+        norm_v = np.sqrt( vx*vx + vy*vy )
+        vx /= norm_v
+        vy /= norm_v
+        # now the difference : car position - nearest wp
+        dx = self.car_x - map_x
+        dy = self.car_y - map_y
+        # Get the dot product of d and v
+        dot = vx * dx + vy * dy
+        if dot >= 0:
+            return (next_wp_index, +1)
+        else:
+            return (nn_index, +1)
+        
+        
+
     # This is my new function that returns the NEXT (NOT nearest)
     # waypoint. It may work better than the original,although it
     # assumes that the car is going along the ascending direction of the
     # waypoint indexes in the published list.
     # I just employed the criterion from the planning assignment.
     # NOTE: I am brute-forcing nearest neighbor as there seems to be a problem 
-    def findNextWaypoint(self):
+    def findNextWaypoint_new(self):
         # first find the closest node in the KD-tree:
 #        (dist, nearest_node) = self.track_root.NNSearch([self.car_x, self.car_y], INF_, self.track_root)
 #        
