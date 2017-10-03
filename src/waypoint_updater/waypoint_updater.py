@@ -28,7 +28,7 @@ TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
 LOOKAHEAD_WPS = 40 # Number of waypoints we will publish. You can change this number
-MAX_SPD = 10.0
+MAX_SPD = 10.0*0.44704  # max speed 10 mph
 
 class WaypointUpdater(object):
     def __init__(self):
