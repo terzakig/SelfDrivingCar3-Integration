@@ -172,37 +172,75 @@ class DBWNode(object):
     def waypoints_cb(self, message):
         # extract waypoints
         self.waypoints = message.waypoints
+        
+    def transfromWPcarCoord(self, waypoints, pose):
+        n = len(waypoints)
+         # get car's x and y position and heading angle
+        car_x = pose.position.x
+        car_y = pose.position.y
+        # get orientation
+        s = self.pose.orientation.w # quaternion scalar
+        v1 = self.pose.orientation.x # vector part 1
+        v2 = self.pose.orientation.y # vector part 2
+        v3 = self.pose.orientation.z # vector part 3        
+        
+        # now obtaining orientation of the car (assuming rotation about z: [0;0;1])
+        car_theta = 2 * np.arccos(s)
+        # Constraining the angle in [-pi, pi)
+        if car_theta > np.pi:
+            car_theta = -(2 * np.pi - car_theta)
+        #car_theta = pose.orientation.z
+       
+        # transform waypoints in vehicle coordiantes
+        wp_carCoord_x = np.zeros(n)
+        wp_carCoord_y = np.zeros(n)
 
-    def calc_CTE(self, waypoints, pose):
-        # get waypoints coordinates (only 20 first points)
-        n = min(20, len(waypoints))
-        if (n<20):
-            rospy.logerr('dbw_node: Not enough waypots received!')
-        points_x = np.zeros(n)
-        points_y = np.zeros(n)
         for i in range(n):
-            points_x[i] = waypoints[i].pose.pose.position.x
-            points_y[i] = waypoints[i].pose.pose.position.y            
-        # get car's x and y position and heading angle
-        x = pose.position.x
-        y = pose.position.y
-        theta = pose.orientation.z
-        # transform points into the vehicle coordinate system:
-        points_x_car = []
-        points_y_car = []
-        # perform coordinate transformation:
-        points_carCoord_x = np.zeros(n)
-        points_carCoord_y = np.zeros(n)
-        for i in range(len(points_x)):
-            points_carCoord_x[i] = (points_y[i]-y)*math.sin(theta)-(x-points_x[i])*math.cos(theta)
-            points_carCoord_y[i] = (points_y[i]-y)*math.cos(theta)-(points_x[i]-x)*math.sin(theta)
-        # Interpolate points in the vehicle coordinate system:
-        coeffs = np.polyfit(points_carCoord_x, points_carCoord_y, 3)
-        p = np.poly1d(coeffs)
-        # distance to track is polynomial at car's position x = 0
-        CTE = p(0.0)
+            wp_x = waypoints[i].pose.pose.position.x
+            wp_y = waypoints[i].pose.pose.position.y            
+            wp_carCoord_x[i] = (wp_y-car_y)*math.sin(car_theta)-(car_x-wp_x)*math.cos(car_theta)
+            wp_carCoord_y[i] = (wp_y-car_y)*math.cos(car_theta)-(wp_x-car_x)*math.sin(car_theta)
+            
+        return wp_carCoord_x, wp_carCoord_y
+                
+    def calc_CTE(self, waypoints, pose):
+        # transfrom waypoints into vehicle coordinates
+        wp_carCoord_x, wp_carCoord_y = self.transfromWPcarCoord(waypoints, pose)
+        
+        # get waypoint which should be used for controller input
+        idxNearestWPfront = self.findNearestWPfront(wp_carCoord_x)
+                
+        # use only 20 first points
+        n_points = 20
+        n = min(n_points, len(wp_carCoord_x-idxNearestWPfront))
 
-        return CTE
-
+        if (n<n_points):
+            rospy.logerr('dbw_node: Not enough waypots received for lateral control!')
+            return 0.0
+        elif (idxNearestWPfront<0):
+            rospy.logerr('dbw_node: No waypoint in front of car for lateral control received!')
+            return 0.0
+        else:
+            # Interpolate waypoints (already transformed to vehicle coordinates) to a polynomial of 3rd degree
+            coeffs = np.polyfit(wp_carCoord_x[idxNearestWPfront:idxNearestWPfront+n], wp_carCoord_y[idxNearestWPfront:idxNearestWPfront+n], 3)
+            p = np.poly1d(coeffs)
+            # distance to track is polynomial at car's position x = 0
+            CTE = p(0.0)
+            return CTE
+        
+    def findNearestWPfront(self, wp_carCoord_x):
+        # this function return first waypoint in front of car
+        # it is asumed that wayponts are already ordered (by waypoint_updater)
+        # if return value is negative then no point in front of car is found!
+        
+        # transfrom waypoint in vehcile coordnates
+        idxNearestWPfront = -1
+        for i in range(len(wp_carCoord_x)):
+            if wp_carCoord_x[i] >= 0.0:
+                idxNearestWPfront = i
+                break
+        
+        return idxNearestWPfront
+                
 if __name__ == '__main__':
     DBWNode()
