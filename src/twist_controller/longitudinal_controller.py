@@ -71,6 +71,7 @@ class LongController(object):
             
         else: # hold vehicle 
             trq = self.min_trq
+            self.accel_PID.freeze()
         
         # calulate throttle
         # published throttle is a percentage

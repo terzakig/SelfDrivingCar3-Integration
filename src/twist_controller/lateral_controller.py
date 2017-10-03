@@ -23,21 +23,28 @@ class LatController(object):
 
         # init PID
         self.steer_PID = PID(kp=0.05, ki=0.0005, kd=0.5)
+       
+        self.last_steer = 0.0
         
     def control(self,target_spd, target_yawRate, current_spd, waypoints, pose, delta_t):
         
-        # feed forward control to drive curvature of road
-        steer_feedForward = self.yawControl.get_steering(target_spd, target_yawRate, current_spd)
-        # limit steering angle
-        steer_feedForward = max(min(steer_feedForward, self.max_angle), self.min_angle)
-        
-        # PID control
-        CTE = self.calc_CTE(waypoints, pose)
-        steer_PID = self.steer_PID.step(CTE, delta_t, mn=self.min_angle-steer_feedForward, mx=self.max_angle-steer_feedForward)
-        
-        # steering command
-        steer = steer_feedForward + steer_PID
-        
+        steer = self.last_steer
+        if current_spd > self.min_speed:
+            # feed forward control to drive curvature of road
+            steer_feedForward = self.yawControl.get_steering(target_spd, target_yawRate, current_spd)
+            # limit steering angle
+            steer_feedForward = max(min(steer_feedForward, self.max_angle), self.min_angle)
+            
+            # PID control
+            CTE = self.calc_CTE(waypoints, pose)
+            steer_PID = self.steer_PID.step(CTE, delta_t, mn=self.min_angle-steer_feedForward, mx=self.max_angle-steer_feedForward)
+            
+            # steering command
+            steer = steer_feedForward + steer_PID
+            self.last_steer = steer
+        else:
+            self.steer_PID.freeze()
+                     
         return steer
         
     def reset(self):
