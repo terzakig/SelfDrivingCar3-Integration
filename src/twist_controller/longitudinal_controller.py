@@ -41,7 +41,10 @@ class LongController(object):
         spd_err = target_spd - current_spd
         # calulate target acceleration from speed error
         # could be tuned
-        k_accel = 0.2
+        if target_spd > 0.05:
+            k_accel = 0.2
+        else:
+            k_accel = 1.0
         target_accel = k_accel * spd_err * spd_err * spd_err
         
         # limit jerk
@@ -51,11 +54,11 @@ class LongController(object):
         # check for min and max allowed acceleration
         target_accel = max( min(target_accel, self.accel_limit), self.decel_limit)
         trq = 0.0
-        if target_spd > 0.0 or current_spd > 1.0:
+        if target_spd > 0.05 or current_spd > 1.0:
             
             trq_feedForward = 0.0
             trq_PID = 0.0
-            if abs(spd_err) > 1.0: #use acceleration mode
+            if abs(spd_err) > 1.0 or (target_spd<1.0 and abs(spd_err) > 0.5): #use acceleration mode
                 # calculate torque from target_accel using mass
                 trq_feedForward = target_accel * self.vehicle_mass * self.wheel_radius
                 
