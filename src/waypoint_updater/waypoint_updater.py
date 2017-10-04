@@ -378,8 +378,9 @@ class WaypointUpdater(object):
         if not self.flag_waypoints_retrieved:
             #header = lanemsg.header
             self.base_waypoints = lanemsg.waypoints
+            self.num_waypoints = len(self.base_waypoints)
             # Now create the track            
-            self.fillTrack()
+            #self.fillTrack()
             # raise the flag so that we don't have to do this again...
             self.flag_waypoints_retrieved = True            
             

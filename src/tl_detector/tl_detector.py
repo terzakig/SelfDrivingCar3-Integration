@@ -112,7 +112,8 @@ class TLDetector(object):
             self.state = state
         elif self.state_count >= STATE_COUNT_THRESHOLD:
             self.last_state = self.state
-            light_wp = light_wp if state == TrafficLight.RED else -1
+            if state != TrafficLight.RED:        
+                light_wp = -1
             self.last_wp = light_wp
             self.upcoming_red_light_pub.publish(Int32(light_wp))
         else:
@@ -255,7 +256,7 @@ class TLDetector(object):
         # ===============================================================
 
         # Set the ADAPTIVE search margin for the traffic light.
-        self.x_margin = int(np.abs(5 * fx / p_camera[0])) # note the 5 metert factor
+        self.x_margin = int(np.abs(6 * fx / p_camera[0])) # note the 5 metert factor
         #rospy.logwarn("X-Margin : %i", self.x_margin)
         if (self.x_margin < 20):
             self.x_margin = 20 # use default 20 pixels if too small margin
@@ -304,11 +305,12 @@ class TLDetector(object):
         left = x - self.x_margin        
         #right = x + 50
         right = x + self.x_margin        
-        top = 30
-        bottom = y + 75
+        top = 20
+        bottom = y + 100
         
         state = TrafficLight.UNKNOWN
-        if self.in_image(left, top) and self.in_image(right, bottom):
+        if True:        
+        #if self.in_image(left, top) and self.in_image(right, bottom):
             roi = cv_image[top:bottom, left:right]
             # skip if roi not set (it may happen, despite the in_image tests)
             if (roi is None): 
@@ -359,13 +361,14 @@ class TLDetector(object):
         if (len(self.tl_wps)==0):           
             for i, stop_line in enumerate(stop_line_positions):
                 tl_wp = self.get_closest_waypoint(Point(stop_line))
-                self.tl_wps.append( (tl_wp+7) % len(self.waypoints.waypoints) ) # +1 to give extra margin towards the traffic light
+                self.tl_wps.append( (tl_wp+5) % len(self.waypoints.waypoints) ) # +1 to give extra margin towards the traffic light
             
         
         light = None
         
         if(self.pose):
             car_wp = self.get_closest_waypoint(self.pose.pose.position)
+
             
             # Now find the smallest distance to a traffic light wp from the car wp:
             minDist = self.track_index_diff(car_wp, self.tl_wps[0])
@@ -377,9 +380,10 @@ class TLDetector(object):
                 if (dist < minDist):
                     minDist = dist                    
                     light_index = i
+            
             light = self.lights[light_index]
-        #print("Red Traffic light index  : ", light_index)
-
+            #print("Nearest Traffic light index  : ", light_index)
+        
         if light:
             # print(light_wp, self.count)
             state = self.get_light_state(light)

@@ -59,10 +59,23 @@ class TLClassifier(object):
         green = cv2.countNonZero(mask_green)
         yellow = cv2.countNonZero(mask_yellow)
         
-        if red > green and red > yellow:
+        
+#        if red > green and red > yellow:
+#            return TrafficLight.RED
+#        elif green > red and green > yellow:
+#            return TrafficLight.GREEN
+#        elif yellow > red and yellow > green:
+#            return TrafficLight.YELLOW
+        #print("red pixels ", red)
+        if (red == 0):
+            return TrafficLight.UNKNOWN
+        if (red >= 200):
             return TrafficLight.RED
-        elif green > red and green > yellow:
-            return TrafficLight.GREEN
-        elif yellow > red and yellow > green:
-            return TrafficLight.YELLOW
-        return TrafficLight.UNKNOWN
+        if red < 200:        
+            if ( yellow / (1.0 * red) < 1 ):
+                #print("RED")                
+                return TrafficLight.RED
+            elif ( yellow / (1.0 * red) > 1 ):
+                #print("YELLOW")                
+                return TrafficLight.YELLOW
+                    
