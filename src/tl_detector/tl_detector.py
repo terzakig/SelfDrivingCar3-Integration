@@ -55,8 +55,11 @@ class TLDetector(object):
         self.config = yaml.load(config_string)
 
         self.upcoming_red_light_pub = rospy.Publisher('/traffic_waypoint', Int32, queue_size=1)
-        #debug: publishing the roi just to see if it contains the light
-        self.roi_pub = rospy.Publisher('/traffic_roi', Image, queue_size=1)
+        
+        # debug: publisher of cross-correlation results
+        self.ccresult_pub = rospy.Publisher('/traffic_ccresult', Image, queue_size=1)
+        
+                
         
         self.bridge = CvBridge()
         self.light_classifier = TLClassifier()
@@ -74,6 +77,13 @@ class TLDetector(object):
         # 5 meter distance from the traffic light along the y-axis (x in image).
         # we use this margin to search for the red pixels instead of a fixed one        
         self.x_margin = 50 # default is 50 (Yuda)
+        
+        # dimensions of the red-light template in pixels
+        self.template_x = 30 # (pixels in x) just a wild-guess for initial value. 
+        self.template_y = 30 # (pixels in y)
+        # the actual dimension of a single light as a swuare         
+        self.TrafficLight_dim = 1.5# (meters) UK standards
+        
         
         rospy.spin()
 
@@ -262,8 +272,17 @@ class TLDetector(object):
             self.x_margin = 20 # use default 20 pixels if too small margin
         if (self.x_margin > 200): # use maximum margin 200 pixels (just to avoid large roi images when out of range)
             self.x_margin = 200 
-        #debug
-        #rospy.logwarn("Projection in pixels : x : %g , y : %f  ", x, y )
+        
+        # Now working out the size (dimension) of the traffic light 
+        # (NOTE: ONLY a single light - i.e. on of the three) in pixels
+        self.template_x = int( fx * self.TrafficLight_dim / p_camera[0] )
+        if (self.template_x > 30 ):
+            self.template_x = 30
+            
+        self.template_y = int( fy * self.TrafficLight_dim / p_camera[0] )
+        if (self.template_y > 30 ):
+            self.template_y = 30
+        
 
         return (x,y)
 
@@ -323,11 +342,17 @@ class TLDetector(object):
             #rospy.logwarn("left : %i , right: %i, top: %i, bottom: %i", left, right, top, bottom )
             # @@@@ New topic : Piblishing the ROI image in "/traffic_roi"   
             bridge = CvBridge()
-            img = bridge.cv2_to_imgmsg(roi, "bgr8")
-            self.roi_pub.publish(img)
+            
+            
+            if (self.template_x > 5) and (self.template_y):
+                (ccres, state) = self.light_classifier.matchRedTemplate(cv_image, self.template_x, self.template_y)                    
+                # publish the results
+                self.ccresult_pub.publish(bridge.cv2_to_imgmsg(ccres, "bgr8"))
+            
+            
             self.count += 1
             # perform light state classification
-            state = self.light_classifier.get_classification(roi)
+            #state = self.light_classifier.get_classification(roi)
             #rospy.logwarn("TL state classified: %d, state count %d", state, self.state_count)
             # debug only
             # if self.count > STATE_COUNT_THRESHOLD and self.count < 10: # save some imgs, not all 
