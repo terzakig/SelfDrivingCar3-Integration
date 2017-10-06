@@ -28,7 +28,8 @@ TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
 LOOKAHEAD_WPS = 40 # Number of waypoints we will publish. You can change this number
-MAX_SPD = 10.0*0.44704  # max speed 10 mph
+KMPH2MPS = 1000. / (60. * 60.)   # 0.277778
+MAX_SPD = 20.0 * KMPH2MPS
 
 class WaypointUpdater(object):
     def __init__(self):
@@ -43,6 +44,11 @@ class WaypointUpdater(object):
          
 
         self.final_waypoints_pub = rospy.Publisher('/final_waypoints', Lane, queue_size=1)
+
+        # get max velocity from Waypoint Loader's config
+        max_velocity_kmph = rospy.get_param('/waypoint_loader/velocity') 
+        self.max_velocity = max_velocity_kmph * KMPH2MPS
+        rospy.logwarn("Max velocity: {0:.2f} km/h".format(max_velocity_kmph))
 
         # TODO: Add other member variables you need below
         self.flag_waypoints_retrieved = False # flag for retrieving waypoints only once
@@ -343,7 +349,12 @@ class WaypointUpdater(object):
 #            self.dispstr = "["
         if self.tl_waypoint is not None:
             dist_tl = self.distance(self.base_waypoints, index, self.tl_waypoint)
-            rospy.logwarn("Distance to red light: %f", dist_tl)
+            current_wp       = self.get_waypoint_from_index(index)      # should this be self.tl_waypoint ??
+            current_velocity = self.get_waypoint_velocity(current_wp)   # linear.x only, in m/s
+            current_velocity *= 3.6  # convert from m/s to km/h
+            # show more useful info
+            rospy.logwarn("Distance to Red TL: {0:.3f} m, vel {1:.2f} km/h, wp ix {2}".format(
+                                                    dist_tl, current_velocity, self.tl_waypoint))
         for i in range(LOOKAHEAD_WPS):
             # index of the trailing waypoints 
             wp = Waypoint()
@@ -420,6 +431,10 @@ class WaypointUpdater(object):
             dist += dl(waypoints[wp1].pose.pose.position, waypoints[i].pose.pose.position)
             wp1 = i
         return dist
+
+    def get_waypoint_from_index(self, wp_index):
+        ''' Return the waypoint specified by wp_index from base_waypoints '''
+        return self.base_waypoints[wp_index]
         
 
 
