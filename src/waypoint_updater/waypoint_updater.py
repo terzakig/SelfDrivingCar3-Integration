@@ -2,7 +2,7 @@
 
 from KDTree import *
 import rospy
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, TwistStamped
 from styx_msgs.msg import Lane, Waypoint
 from std_msgs.msg import Int32
 import numpy as np
@@ -49,6 +49,10 @@ class WaypointUpdater(object):
         max_velocity_kmph = rospy.get_param('/waypoint_loader/velocity') 
         self.max_velocity = max_velocity_kmph * KMPH2MPS
         rospy.logwarn("Max velocity: {0:.2f} km/h".format(max_velocity_kmph))
+
+        self.current_velocity = None
+        # get current velocity too
+        rospy.Subscriber('/current_velocity', TwistStamped, self.current_velocity_cb, queue_size=1)
 
         # TODO: Add other member variables you need below
         self.flag_waypoints_retrieved = False # flag for retrieving waypoints only once
@@ -349,8 +353,7 @@ class WaypointUpdater(object):
 #            self.dispstr = "["
         if self.tl_waypoint is not None:
             dist_tl = self.distance(self.base_waypoints, index, self.tl_waypoint)
-            current_wp       = self.get_waypoint_from_index(index)      # should this be self.tl_waypoint ??
-            current_velocity = self.get_waypoint_velocity(current_wp)   # linear.x only, in m/s
+            current_velocity = self.current_velocity.linear.x if self.current_velocity is not None else self.max_velocity
             current_velocity *= 3.6  # convert from m/s to km/h
             # show more useful info
             rospy.logwarn("Distance to Red TL: {0:.3f} m, vel {1:.2f} km/h, wp ix {2}".format(
@@ -417,6 +420,12 @@ class WaypointUpdater(object):
     def obstacle_cb(self, msg):
         # TODO: Callback for /obstacle_waypoint message. We will implement it later
         pass
+
+    def current_velocity_cb(self, msg):
+        ''' Callback for /current_velocity topic
+            Simply save the current velocity value
+        '''
+        self.current_velocity = msg.twist
 
     def get_waypoint_velocity(self, waypoint):
         return waypoint.twist.twist.linear.x
