@@ -112,7 +112,8 @@ class DBWNode(object):
                 target_spd = self.twist.linear.x
                 throttle, brake =  self.longControl.control(target_spd,current_spd,delta_t)
                 
-                #rospy.logwarn("target_spd: %f" % target_spd + "; current_spd: %f" % current_spd)
+                # convert from m/s to km/h
+                #rospy.logwarn("target_spd: {0:.2f}, current_spd: {1:.2f} km/h".format(target_spd * 3.6, current_spd * 3.6))
                 #rospy.logwarn("throttle: %f" % throttle + "; brake: %f" % brake)
                 
                 # lateral control
