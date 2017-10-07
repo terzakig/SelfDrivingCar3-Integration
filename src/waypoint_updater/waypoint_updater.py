@@ -49,9 +49,9 @@ class WaypointUpdater(object):
         self.final_waypoints_pub = rospy.Publisher('/final_waypoints', Lane, queue_size=1)
 
         # get max velocity from Waypoint Loader's config
-        max_velocity_kmph = rospy.get_param('/waypoint_loader/velocity') 
-        self.max_velocity = max_velocity_kmph * KMPH2MPS
-        rospy.logwarn("Max velocity: {0:.2f} km/h".format(max_velocity_kmph))
+        #max_velocity_kmph = rospy.get_param('/waypoint_loader/velocity') 
+        #self.max_velocity = max_velocity_kmph * KMPH2MPS
+        #rospy.logwarn("Max velocity: {0:.2f} km/h".format(max_velocity_kmph))
 
         self.current_velocity = None
         # get current velocity too
@@ -356,7 +356,7 @@ class WaypointUpdater(object):
 #            self.dispstr = "["
         if self.tl_waypoint is not None:
             dist_tl = self.distance(self.base_waypoints, index, self.tl_waypoint)
-            current_velocity = self.current_velocity.linear.x if self.current_velocity is not None else 0.0 #self.max_velocity
+            current_velocity = self.current_velocity.linear.x if self.current_velocity is not None else 0.0
             # show more useful info
             #rospy.logwarn("Distance to Red TL: {0:.3f} m, vel {1:.2f} km/h, wp ix {2}".format(
             #                                        dist_tl, current_velocity*3.6, self.tl_waypoint))
@@ -369,13 +369,15 @@ class WaypointUpdater(object):
             # TODO - TODO : Fill it with sensible velocities using
             #               feedback from the traffic light node etc...
             
+            # get maximum allowed speed from base waypoint
+            max_spd = self.base_waypoints[index].twist.twist.linear.x
             
             if self.tl_waypoint is None: # no red light
-                wp.twist.twist.linear.x = self.max_velocity # don't go to fast
+                wp.twist.twist.linear.x = max_spd# don't go to fast
             else: # red light
                 dist_tl = self.distance(self.base_waypoints, index, self.tl_waypoint)
                 dist_stop = 7.0
-                wp.twist.twist.linear.x = min(max(0.0, 0.2*(dist_tl-dist_stop)), self.max_velocity)
+                wp.twist.twist.linear.x = min(max(0.0, 0.2*(dist_tl-dist_stop)), max_spd)
                 # stop vehicle if vehicle is almost standing and target speed is very low for waypoint
                 if current_velocity < 0.25 and wp.twist.twist.linear.x < 0.25:
                     wp.twist.twist.linear.x = 0.0
