@@ -27,10 +27,10 @@ as well as to verify your TL classifier.
 TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
-LOOKAHEAD_WPS = 40 # Number of waypoints we will publish. You can change this number
+LOOKAHEAD_WPS = 80 # Number of waypoints we will publish. You can change this number
 KMPH2MPS = 1000. / (60. * 60.)   # 0.277778
 MPH2MPS = 0.44704
-MAX_SPD = 20.0 * KMPH2MPS
+#MAX_SPD = 20.0 * KMPH2MPS
 #MAX_SPD = 10.0 * MPH2MPS
 #MAX_SPD = 5.0
 
@@ -49,9 +49,9 @@ class WaypointUpdater(object):
         self.final_waypoints_pub = rospy.Publisher('/final_waypoints', Lane, queue_size=1)
 
         # get max velocity from Waypoint Loader's config
-        #max_velocity_kmph = rospy.get_param('/waypoint_loader/velocity') 
-        #self.max_velocity = max_velocity_kmph * KMPH2MPS
-        #rospy.logwarn("Max velocity: {0:.2f} km/h".format(max_velocity_kmph))
+        max_velocity_kmph = rospy.get_param('/waypoint_loader/velocity') 
+        self.max_velocity = max_velocity_kmph * KMPH2MPS
+        rospy.logwarn("Max velocity: {0:.2f} km/h".format(max_velocity_kmph))
 
         self.current_velocity = None
         # get current velocity too
@@ -371,11 +371,11 @@ class WaypointUpdater(object):
             
             
             if self.tl_waypoint is None: # no red light
-                wp.twist.twist.linear.x = MAX_SPD # don't go to fast
+                wp.twist.twist.linear.x = self.max_velocity # don't go to fast
             else: # red light
                 dist_tl = self.distance(self.base_waypoints, index, self.tl_waypoint)
                 dist_stop = 7.0
-                wp.twist.twist.linear.x = min(max(0.0, 0.2*(dist_tl-dist_stop)), MAX_SPD)
+                wp.twist.twist.linear.x = min(max(0.0, 0.2*(dist_tl-dist_stop)), self.max_velocity)
                 # stop vehicle if vehicle is almost standing and target speed is very low for waypoint
                 if current_velocity < 0.25 and wp.twist.twist.linear.x < 0.25:
                     wp.twist.twist.linear.x = 0.0

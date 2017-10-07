@@ -46,9 +46,9 @@ class LongController(object):
 
         # acceleration is not linear
         # guess for vehicle 
-        # throttle 1.0 --> accel 4 m/s^2
+        # throttle 1.0 --> accel 3 m/s^2
 
-        self.max_accel = 4.0 # 
+        self.max_accel = 3.0 # 
         self.ref_force_throttle = vehicle_mass * self.max_accel # force at 100% throttle position
 
         
@@ -63,7 +63,7 @@ class LongController(object):
         self.last_force = 0.0
         
         # init PID
-        self.accel_PID = PID(kp=1.0*vehicle_mass*wheel_radius, ki=0.015*vehicle_mass*wheel_radius, kd=0.0*vehicle_mass*wheel_radius)
+        self.accel_PID = PID(kp=2.0*vehicle_mass*wheel_radius, ki=0.015*vehicle_mass*wheel_radius, kd=0.2*vehicle_mass*wheel_radius)
         
     def control(self,target_spd,current_spd,delta_t):
         
@@ -106,7 +106,7 @@ class LongController(object):
         if target_spd > 0.05 or current_spd > 1.0:
             # calculate force from target_accel using mass
             # F = m * a
-            force_air = 25*current_spd*current_spd # overall speed square dependend force (tuned in simulator)
+            force_air = 15*current_spd*current_spd # overall speed square dependend force (tuned in simulator)
             force_feedForward = target_accel * self.vehicle_mass + force_air#* self.wheel_radius / self.n_wheel_accel
             
             # use PID to get better control performance
