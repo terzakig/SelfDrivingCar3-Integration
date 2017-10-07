@@ -54,7 +54,7 @@ class TLDetector(object):
         rospy.logwarn("The parameter string is : %s", config_string )
         self.config = yaml.load(config_string)
 
-        self.upcoming_red_light_pub = rospy.Publisher('/traffic_waypoint', Int32, queue_size=1)
+        self.upcoming_light_pub = rospy.Publisher('/traffic_waypoint', Int32, queue_size=1)
         
         # debug: publisher of cross-correlation results
         self.ccresult_pub = rospy.Publisher('/traffic_ccresult', Image, queue_size=1)
@@ -82,7 +82,7 @@ class TLDetector(object):
         self.template_x = 30 # (pixels in x) just a wild-guess for initial value. 
         self.template_y = 30 # (pixels in y)
         # the actual dimension of a single light as a swuare         
-        self.TrafficLight_dim = 1.5# (meters) UK standards
+        self.TrafficLight_dim = 1.6# (suppose to be in meters but scaling is a bit hand-tuned) 
         
         
         rospy.spin()
@@ -122,12 +122,13 @@ class TLDetector(object):
             self.state = state
         elif self.state_count >= STATE_COUNT_THRESHOLD:
             self.last_state = self.state
-            if state != TrafficLight.RED:        
-                light_wp = -1
+            if state == TrafficLight.UNKNOWN:        
+                self.upcoming_light_pub.publish(Int32(-1))
+                return
             self.last_wp = light_wp
-            self.upcoming_red_light_pub.publish(Int32(light_wp))
+            self.upcoming_light_pub.publish(Int32( light_wp | (self.state << 16) ))
         else:
-            self.upcoming_red_light_pub.publish(Int32(self.last_wp))
+            self.upcoming_light_pub.publish(Int32(self.last_wp | (self.last_state << 16) ))
         self.state_count += 1
 
     def get_closest_waypoint(self, pose):
@@ -276,12 +277,12 @@ class TLDetector(object):
         # Now working out the size (dimension) of the traffic light 
         # (NOTE: ONLY a single light - i.e. on of the three) in pixels
         self.template_x = int( fx * self.TrafficLight_dim / p_camera[0] )
-        if (self.template_x > 30 ):
-            self.template_x = 30
+        if (self.template_x > 45 ):
+            self.template_x = 45
             
         self.template_y = int( fy * self.TrafficLight_dim / p_camera[0] )
-        if (self.template_y > 30 ):
-            self.template_y = 30
+        if (self.template_y > 45 ):
+            self.template_y = 45
         
 
         return (x,y)
@@ -328,35 +329,35 @@ class TLDetector(object):
         bottom = y + 100
         
         state = TrafficLight.UNKNOWN
-        if True:        
+              
         #if self.in_image(left, top) and self.in_image(right, bottom):
-            roi = cv_image[top:bottom, left:right]
-            # skip if roi not set (it may happen, despite the in_image tests)
-            if (roi is None): 
-                rospy.logwarn("ROI image is None!")
-                return state
-            # skip if roi is singular (i.e. single row or column)
-            if (roi.shape[0] < 2 or roi.shape[1] < 2):
-                return state
-            #debug (publish the ROI  shape)
-            #rospy.logwarn("left : %i , right: %i, top: %i, bottom: %i", left, right, top, bottom )
-            # @@@@ New topic : Piblishing the ROI image in "/traffic_roi"   
-            bridge = CvBridge()
+        roi = cv_image[top:bottom, left:right]
+        # skip if roi not set (it may happen, despite the in_image tests)
+        # NOTE: This 
+        if (roi is None): 
+            rospy.logwarn("ROI image is None!")
+            return state
+        # skip if roi is singular (i.e. single row or column)
+        if (roi.shape[0] < 2 or roi.shape[1] < 2):
+            return state
+        # bridge will be useful publishing the classification results  
+        bridge = CvBridge()
             
             
-            if (self.template_x > 5) and (self.template_y):
-                (ccres, state) = self.light_classifier.matchRedTemplate(cv_image, self.template_x, self.template_y)                    
-                # publish the results
+        if (self.template_x > 5) and (self.template_y):
+            (ccres, state) = self.light_classifier.matchRedTemplate(cv_image, self.template_x, self.template_y)                    
+            # publish the results
+            if not (ccres is None):                
                 self.ccresult_pub.publish(bridge.cv2_to_imgmsg(ccres, "bgr8"))
             
             
-            self.count += 1
-            # perform light state classification
-            #state = self.light_classifier.get_classification(roi)
-            #rospy.logwarn("TL state classified: %d, state count %d", state, self.state_count)
-            # debug only
-            # if self.count > STATE_COUNT_THRESHOLD and self.count < 10: # save some imgs, not all 
-            #     cv2.imwrite('/home/student/Tests/imgs/' + ("%.3d-%d" % (self.count, state)) + '.jpg', roi)
+        self.count += 1
+        # perform light state classification
+        #state = self.light_classifier.get_classification(roi)
+        #rospy.logwarn("TL state classified: %d, state count %d", state, self.state_count)
+        # debug only
+        # if self.count > STATE_COUNT_THRESHOLD and self.count < 10: # save some imgs, not all 
+        #     cv2.imwrite('/home/student/Tests/imgs/' + ("%.3d-%d" % (self.count, state)) + '.jpg', roi)
         return state
         
     def track_index_diff(self,index1, index2):

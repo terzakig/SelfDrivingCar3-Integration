@@ -2,6 +2,7 @@
 
 from KDTree import *
 import rospy
+from styx_msgs.msg import TrafficLight
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from styx_msgs.msg import Lane, Waypoint
 from std_msgs.msg import Int32
@@ -81,6 +82,8 @@ class WaypointUpdater(object):
         # variables for traffic lights
         self.tl_waypoint = None
         self.last_tl_waypoint = None
+        self.tl_state = TrafficLight.UNKNOWN
+        self.last_tl_state = TrafficLight.UNKNOWN
 
         self.loop()
 
@@ -354,16 +357,12 @@ class WaypointUpdater(object):
 #            self.dispstr += "["
 #            rospy.logwarn(self.dispstr)
 #            self.dispstr = "["
-        current_velocity = self.current_velocity.linear.x if self.current_velocity is not None else 0.0
         if self.tl_waypoint is not None:
             dist_tl = self.distance(self.base_waypoints, index, self.tl_waypoint)
+            current_velocity = self.current_velocity.linear.x if self.current_velocity is not None else 0.0
             # show more useful info
-            rospy.logwarn("Distance to Red TL: {0:.3f} m, vel {1:.2f} km/h, wp car {2}, wp tl {3}".format(
-                                                    dist_tl, current_velocity*3.6, index, self.tl_waypoint))
-        else:
-            rospy.logwarn("Distance to Red TL: ---- m, vel {0:.2f} km/h, wp car {1}, wp tl {2}".format(
-                                                    current_velocity*3.6, index, self.tl_waypoint))
-        
+            #rospy.logwarn("Distance to Red TL: {0:.3f} m, vel {1:.2f} km/h, wp ix {2}".format(
+            #                                        dist_tl, current_velocity*3.6, self.tl_waypoint))
         for i in range(LOOKAHEAD_WPS):
             # index of the trailing waypoints 
             wp = Waypoint()
@@ -378,14 +377,25 @@ class WaypointUpdater(object):
             
             if self.tl_waypoint is None: # no red light
                 wp.twist.twist.linear.x = max_spd# don't go to fast
-            else: # red light
+            elif self.tl_state == TrafficLight.YELLOW and self.last_tl_state == TrafficLight.GREEN:
+                wp.twist.twist.linear.x = max_spd / 2
+            elif self.tl_state == TrafficLight.YELLOW and self.last_tl_state == TrafficLight.RED:
+                wp.twist.twist.linear.x = max_spd
+            elif self.tl_state == TrafficLight.YELLOW and self.last_tl_state == TrafficLight.UNKNOWN:
+                wp.twist.twist.linear.x = max_spd / 2
+            elif self.tl_state == TrafficLight.GREEN:
+                wp.twist.twist.linear.x = max_spd                
+                         
+            elif (self.tl_state == TrafficLight.RED): # red , green or yellow
+                #rospy.logwarn("Index of the traffic light waypoint : %i", self.tl_waypoint)
                 dist_tl = self.distance(self.base_waypoints, index, self.tl_waypoint)
                 dist_stop = 7.0
                 wp.twist.twist.linear.x = min(max(0.0, 0.2*(dist_tl-dist_stop)), max_spd)
                 # stop vehicle if vehicle is almost standing and target speed is very low for waypoint
                 if current_velocity < 0.25 and wp.twist.twist.linear.x < 0.25:
                     wp.twist.twist.linear.x = 0.0
-                
+            else: 
+                wp.twist.twist.linear.x = max_spd   
             # add the waypoint to the list
             msg.waypoints.append(wp)
         
@@ -414,17 +424,21 @@ class WaypointUpdater(object):
     def traffic_cb(self, msg):
         # TODO: Callback for /traffic_waypoint message. Implement
         tl_wp = msg.data
-        if tl_wp >= 0: #red traffic light detected
-            self.tl_waypoint = tl_wp
-            if self.last_tl_waypoint is None:
+        if tl_wp >= 0: # A traffic light is detected
+            self.tl_state = (tl_wp & 0xFFFF0000) >> 16            
+            self.tl_waypoint = tl_wp & 0xFFFF
+            if ( self.last_tl_waypoint is None ) and self.tl_state == TrafficLight.RED:
                 rospy.logwarn("Red traffic light at : %d", tl_wp)
             
         else:
             self.tl_waypoint = None
+            self.tl_state = TrafficLight.UNKNOWN
             if self.last_tl_waypoint is not None:
                 rospy.logwarn("Not Red; GO!!!!")
         
+        # keep track of previous state. Useful in deciding speed transitioning
         self.last_tl_waypoint = self.tl_waypoint
+        self.last_tl_state = self.tl_state
         
         return
 
