@@ -141,7 +141,7 @@ class LongController(object):
             
         # output for debug
         #rospy.logwarn("accel_raw: %f" % accel_raw + "; accel_filt: %f" % accel_filt + "; target_accel: %f" % target_accel + "; current_spd: %f" % current_spd)
-        rospy.logwarn("target_spd: {0:.2f} km/h, current_spd: {1:.2f} km/h, expected_spd: {2:.2f} km/h, target_accel: {3:.2f} m/ss, accel: {4:.2f} m/ss, throttle: {5:.2f}, brake: {6:.2f} Nm, force_PID: {7:.2f} N".format(target_spd * 3.6, current_spd * 3.6, expected_spd*3.6, target_accel, accel_filt, throttle, brake, force_PID))
+        #rospy.logwarn("target_spd: {0:.2f} km/h, current_spd: {1:.2f} km/h, expected_spd: {2:.2f} km/h, target_accel: {3:.2f} m/ss, accel: {4:.2f} m/ss, throttle: {5:.2f}, brake: {6:.2f} Nm, force_PID: {7:.2f} N".format(target_spd * 3.6, current_spd * 3.6, expected_spd*3.6, target_accel, accel_filt, throttle, brake, force_PID))
 
         
             
