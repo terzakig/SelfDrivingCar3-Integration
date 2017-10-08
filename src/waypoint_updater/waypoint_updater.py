@@ -358,16 +358,16 @@ class WaypointUpdater(object):
 #            rospy.logwarn(self.dispstr)
 #            self.dispstr = "["
         current_velocity = self.current_velocity.linear.x if self.current_velocity is not None else 0.0
-        if self.tl_waypoint is not None:
-            dist_tl = self.distance(self.base_waypoints, index, self.tl_waypoint)
-            # show more useful info
-            #rospy.logwarn("Distance to Red TL: {0:.3f} m, vel {1:.2f} km/h, wp ix {2}".format(
-            #                                        dist_tl, current_velocity*3.6, self.tl_waypoint))
-            rospy.logwarn("Distance to Red TL: {0:.3f} m, vel {1:.2f} km/h, wp car {2}, wp tl {3}".format(
-                                                    dist_tl, current_velocity*3.6, index, self.tl_waypoint))
-        else:
-            rospy.logwarn("Distance to Red TL: ---- m, vel {0:.2f} km/h, wp car {1}, wp tl {2}".format(
-                                                    current_velocity*3.6, index, self.tl_waypoint))
+#        if self.tl_waypoint is not None:
+#            dist_tl = self.distance(self.base_waypoints, index, self.tl_waypoint)
+#            # show more useful info
+#            #rospy.logwarn("Distance to Red TL: {0:.3f} m, vel {1:.2f} km/h, wp ix {2}".format(
+#            #                                        dist_tl, current_velocity*3.6, self.tl_waypoint))
+#            rospy.logwarn("Distance to Red TL: {0:.3f} m, vel {1:.2f} km/h, wp car {2}, wp tl {3}, car_x {4:.3f}, car_y {5:.3f}".format(
+#                                                    dist_tl, current_velocity*3.6, index, self.tl_waypoint, self.car_x, self.car_y))
+#        else:
+#            rospy.logwarn("Distance to Red TL: ---- m, vel {0:.2f} km/h, wp car {1}, wp tl {2}, car_x {3:.3f}, car_y {4:.3f}".format(
+#                                                    current_velocity*3.6, index, self.tl_waypoint, self.car_x, self.car_y))
         for i in range(LOOKAHEAD_WPS):
             # index of the trailing waypoints 
             wp = Waypoint()
@@ -379,9 +379,10 @@ class WaypointUpdater(object):
             
             # get maximum allowed speed from base waypoint
             max_spd = self.base_waypoints[index].twist.twist.linear.x
+            #max_spd = 10 * KMPH2MPS # 10 km/h
             
             if self.tl_waypoint is None: # no red light
-                wp.twist.twist.linear.x = max_spd# don't go to fast
+                wp.twist.twist.linear.x = max_spd
             elif self.tl_state == TrafficLight.YELLOW and self.last_tl_state == TrafficLight.GREEN:
                 wp.twist.twist.linear.x = max_spd / 2
             elif self.tl_state == TrafficLight.YELLOW and self.last_tl_state == TrafficLight.RED:
@@ -394,7 +395,7 @@ class WaypointUpdater(object):
             elif (self.tl_state == TrafficLight.RED): # red , green or yellow
                 #rospy.logwarn("Index of the traffic light waypoint : %i", self.tl_waypoint)
                 dist_tl = self.distance(self.base_waypoints, index, self.tl_waypoint)
-                dist_stop = 7.0
+                dist_stop = 5.0
                 wp.twist.twist.linear.x = min(max(0.0, 0.2*(dist_tl-dist_stop)), max_spd)
                 # stop vehicle if vehicle is almost standing and target speed is very low for waypoint
                 if current_velocity < 0.25 and wp.twist.twist.linear.x < 0.25:

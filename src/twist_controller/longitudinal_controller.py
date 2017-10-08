@@ -79,7 +79,11 @@ class LongController(object):
             k_accel = 0.2
         else:
             k_accel = 1.0
-        target_accel = k_accel * spd_err * spd_err * spd_err
+        if (abs(spd_err)<1.0):
+            target_accel = k_accel * spd_err
+        else:
+            target_accel = k_accel * spd_err * spd_err * spd_err
+        
         
         # limit jerk
         accel_change_limit = LONG_JERK_LIMIT * delta_t
@@ -104,10 +108,12 @@ class LongController(object):
         expected_spd = max(min(target_spd, expected_spd),0.0)
         
         if target_spd > 0.05 or current_spd > 1.0:
+            # overall resistance (tuned in simulator)
+            force_resistance = 4*current_spd*current_spd + 40*current_spd + 40
+
             # calculate force from target_accel using mass
             # F = m * a
-            force_air = 15*current_spd*current_spd # overall speed square dependend force (tuned in simulator)
-            force_feedForward = target_accel * self.vehicle_mass + force_air#* self.wheel_radius / self.n_wheel_accel
+            force_feedForward = target_accel * self.vehicle_mass + force_resistance
             
             # use PID to get better control performance
             expected_err = expected_spd - current_spd
@@ -141,7 +147,7 @@ class LongController(object):
             
         # output for debug
         #rospy.logwarn("accel_raw: %f" % accel_raw + "; accel_filt: %f" % accel_filt + "; target_accel: %f" % target_accel + "; current_spd: %f" % current_spd)
-        #rospy.logwarn("target_spd: {0:.2f} km/h, current_spd: {1:.2f} km/h, expected_spd: {2:.2f} km/h, target_accel: {3:.2f} m/ss, accel: {4:.2f} m/ss, throttle: {5:.2f}, brake: {6:.2f} Nm, force_PID: {7:.2f} N".format(target_spd * 3.6, current_spd * 3.6, expected_spd*3.6, target_accel, accel_filt, throttle, brake, force_PID))
+        rospy.logwarn("target_spd: {0:.2f} km/h, current_spd: {1:.2f} km/h, expected_spd: {2:.2f} km/h, target_accel: {3:.2f} m/ss, accel: {4:.2f} m/ss, throttle: {5:.2f}, brake: {6:.2f} Nm, force_PID: {7:.2f} N".format(target_spd * 3.6, current_spd * 3.6, expected_spd*3.6, target_accel, accel_filt, throttle, brake, force_PID))
 
         
             
