@@ -2,6 +2,7 @@
 
 from KDTree import *
 import rospy
+from styx_msgs.msg import TrafficLight
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from styx_msgs.msg import Lane, Waypoint
 from std_msgs.msg import Int32
@@ -27,9 +28,20 @@ as well as to verify your TL classifier.
 TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
-LOOKAHEAD_WPS = 40 # Number of waypoints we will publish. You can change this number
+LOOKAHEAD_WPS = 80 # Number of waypoints we will publish. You can change this number
 KMPH2MPS = 1000. / (60. * 60.)   # 0.277778
-MAX_SPD = 20.0 * KMPH2MPS
+MPH2MPS = 0.44704
+#MAX_SPD = 20.0 * KMPH2MPS
+#MAX_SPD = 10.0 * MPH2MPS
+#MAX_SPD = 5.0
+
+DIST_STOP_TL = 6.0
+
+CAR_STATE_STOP = 0
+CAR_STATE_SLOWDOWN = 1
+CAR_STATE_MAX_SPEED = 2
+CAR_STATE_OVERDIVE = 3
+
 
 class WaypointUpdater(object):
     def __init__(self):
@@ -46,9 +58,9 @@ class WaypointUpdater(object):
         self.final_waypoints_pub = rospy.Publisher('/final_waypoints', Lane, queue_size=1)
 
         # get max velocity from Waypoint Loader's config
-        max_velocity_kmph = rospy.get_param('/waypoint_loader/velocity') 
-        self.max_velocity = max_velocity_kmph * KMPH2MPS
-        rospy.logwarn("Max velocity: {0:.2f} km/h".format(max_velocity_kmph))
+        #max_velocity_kmph = rospy.get_param('/waypoint_loader/velocity') 
+        #self.max_velocity = max_velocity_kmph * KMPH2MPS
+        #rospy.logwarn("Max velocity: {0:.2f} km/h".format(max_velocity_kmph))
 
         self.current_velocity = None
         # get current velocity too
@@ -78,6 +90,16 @@ class WaypointUpdater(object):
         # variables for traffic lights
         self.tl_waypoint = None
         self.last_tl_waypoint = None
+        self.tl_state = TrafficLight.UNKNOWN
+        self.last_tl_state = TrafficLight.UNKNOWN
+        # Keep track of last max speed for traffic light behavior
+        self.last_max_spd = 2 
+        
+        # define a car state as a small state machine to react on traffic lights
+        self.car_state_tl = CAR_STATE_STOP
+        
+        # memorize next waypoint
+        self.next_wp_index = None
 
         self.loop()
 
@@ -103,13 +125,13 @@ class WaypointUpdater(object):
                     self.car_theta = -(2 * np.pi - self.car_theta)
                 # Now get the next waypoint....
                 if self.flag_waypoints_retrieved:
-                    (next_wp_index, step) = self.findNextWaypoint()
-                    #rospy.logwarn("Next waypoint : %d", next_wp_index)
+                    (self.next_wp_index, step) = self.findNextWaypoint()
+                    #rospy.logwarn("Next waypoint : %d", self.next_wp_index)
                     #rospy.logwarn("car : (%f , %f) ", self.car_x, self.car_y)
-                    #rospy.logwarn("nwp : (%f , %f) ", self.base_waypoints[next_wp_index].pose.pose.position.x, self.base_waypoints[next_wp_index].pose.pose.position.y)
+                    #rospy.logwarn("nwp : (%f , %f) ", self.base_waypoints[self.next_wp_index].pose.pose.position.x, self.base_waypoints[self.next_wp_index].pose.pose.position.y)
                     
                    # publish the nodes
-                    self.publishWaypoints(next_wp_index, step)
+                    self.publishWaypoints(self.next_wp_index, step)
             rate.sleep()
 
 
@@ -351,13 +373,17 @@ class WaypointUpdater(object):
 #            self.dispstr += "["
 #            rospy.logwarn(self.dispstr)
 #            self.dispstr = "["
+        current_velocity = self.current_velocity.linear.x if self.current_velocity is not None else 0.0
         if self.tl_waypoint is not None:
             dist_tl = self.distance(self.base_waypoints, index, self.tl_waypoint)
-            current_velocity = self.current_velocity.linear.x if self.current_velocity is not None else self.max_velocity
-            current_velocity *= 3.6  # convert from m/s to km/h
             # show more useful info
-            rospy.logwarn("Distance to Red TL: {0:.3f} m, vel {1:.2f} km/h, wp ix {2}".format(
-                                                    dist_tl, current_velocity, self.tl_waypoint))
+            #rospy.logwarn("Distance to Red TL: {0:.3f} m, vel {1:.2f} km/h, wp ix {2}".format(
+            #                                        dist_tl, current_velocity*3.6, self.tl_waypoint))
+            rospy.logwarn("Dist TL: {0:.3f} m, vel {1:.2f} km/h".format(
+                          dist_tl, current_velocity*3.6))
+        else:
+            rospy.logwarn("Dist TL: ---- m, vel {0:.2f} km/h".format(
+                          current_velocity*3.6))
         for i in range(LOOKAHEAD_WPS):
             # index of the trailing waypoints 
             wp = Waypoint()
@@ -367,14 +393,28 @@ class WaypointUpdater(object):
             # TODO - TODO : Fill it with sensible velocities using
             #               feedback from the traffic light node etc...
             
-            
-            if self.tl_waypoint is None: # no red light
-                wp.twist.twist.linear.x = MAX_SPD # don't go to fast
-            else: # red light
-                dist_tl = self.distance(self.base_waypoints, index, self.tl_waypoint)
-                dist_stop = 10.0
-                wp.twist.twist.linear.x = min(max(0.0, 0.2*(dist_tl-dist_stop)), MAX_SPD)
-                
+            # get maximum allowed speed from base waypoint
+            max_spd = self.base_waypoints[index].twist.twist.linear.x
+            #max_spd = 10 * KMPH2MPS # 10 km/h
+
+            if self.car_state_tl == CAR_STATE_OVERDIVE or self.car_state_tl == CAR_STATE_MAX_SPEED:
+                wp.twist.twist.linear.x = max_spd
+            else:
+                if self.tl_waypoint is None: # should never happen
+                    wp.twist.twist.linear.x = 0.0 # safe state
+                else:
+                    dist_tl = self.distance(self.base_waypoints, index, self.tl_waypoint)
+                    if self.car_state_tl == CAR_STATE_STOP:
+                        wp.twist.twist.linear.x = min(max(0.0, 0.2*(dist_tl-DIST_STOP_TL)), max_spd)
+                        # stop vehicle if vehicle is almost standing and target speed is very low for waypoint
+                        if current_velocity < 0.25 and wp.twist.twist.linear.x < 0.25:
+                            wp.twist.twist.linear.x = 0.0
+                    elif self.car_state_tl == CAR_STATE_SLOWDOWN:
+                        # slow down to max_spd/2
+                        wp.twist.twist.linear.x = min(max(max_spd/2, max_spd/2+0.2*(dist_tl-DIST_STOP_TL)), max_spd)
+                    else: # should never happen
+                        wp.twist.twist.linear.x = 0.0 # safe state
+
             # add the waypoint to the list
             msg.waypoints.append(wp)
         
@@ -403,17 +443,77 @@ class WaypointUpdater(object):
     def traffic_cb(self, msg):
         # TODO: Callback for /traffic_waypoint message. Implement
         tl_wp = msg.data
-        if tl_wp >= 0: #red traffic light detected
-            self.tl_waypoint = tl_wp
-            if self.last_tl_waypoint is None:
+        if tl_wp >= 0: # A traffic light is detected
+            self.tl_state = (tl_wp & 0xFFFF0000) >> 16            
+            self.tl_waypoint = tl_wp & 0xFFFF
+            if ( self.last_tl_waypoint is None ) and self.tl_state == TrafficLight.RED:
                 rospy.logwarn("Red traffic light at : %d", tl_wp)
             
         else:
             self.tl_waypoint = None
+            self.tl_state = TrafficLight.UNKNOWN
             if self.last_tl_waypoint is not None:
                 rospy.logwarn("Not Red; GO!!!!")
         
+        # set small statemachine to react on traffic lights
+        current_velocity = self.current_velocity.linear.x if self.current_velocity is not None else 0.0
+
+        if self.base_waypoints is None or self.next_wp_index is None:  #not all data received yet
+            self.car_state_tl = CAR_STATE_STOP
+        else: 
+            if self.tl_waypoint is None: # no traffic light
+                self.car_state_tl = CAR_STATE_MAX_SPEED
+            else:
+                dist_tl = self.distance(self.base_waypoints, self.next_wp_index, self.tl_waypoint)
+                time2tlStop = 9999.9 # high value
+                if current_velocity > 1.: # avoid devision by zero and car moving
+                    time2tlStop = max(0.0,dist_tl-DIST_STOP_TL) / current_velocity
+                
+                if self.tl_state == TrafficLight.YELLOW and self.last_tl_state == TrafficLight.GREEN:
+                    if time2tlStop < 1.0: # no time to react -> full speed
+                        self.car_state_tl = CAR_STATE_OVERDIVE
+                    else: # break
+                        self.car_state_tl = CAR_STATE_SLOWDOWN
+        
+                elif self.tl_state == TrafficLight.YELLOW and self.last_tl_state == TrafficLight.YELLOW:
+                    if self.car_state_tl == CAR_STATE_OVERDIVE: 
+                        self.car_state_tl = CAR_STATE_OVERDIVE
+                    else:
+                        if time2tlStop < 1.0: # no time to react -> full speed
+                            self.car_state_tl = CAR_STATE_OVERDIVE
+                        else: # break
+                            self.car_state_tl = CAR_STATE_STOP
+                    
+                elif self.tl_state == TrafficLight.YELLOW and self.last_tl_state == TrafficLight.RED:
+                    if time2tlStop < 1.0: # dont cross before green
+                        self.car_state_tl = CAR_STATE_SLOWDOWN # don't cross before green - not leaving red light
+                    else:
+                        self.car_state_tl = CAR_STATE_MAX_SPEED # Leaving a red light. Give it all you have got!
+
+                elif self.tl_state == TrafficLight.YELLOW and self.last_tl_state == TrafficLight.UNKNOWN:
+                    if self.car_state_tl == CAR_STATE_OVERDIVE:
+                        self.car_state_tl = CAR_STATE_OVERDIVE
+                    else:
+                        if time2tlStop < 1.0: # no time to react -> full speed
+                            self.car_state_tl = CAR_STATE_OVERDIVE
+                        else: # watch out
+                            self.car_state_tl = CAR_STATE_SLOWDOWN
+                elif self.tl_state == TrafficLight.GREEN:
+                    self.car_state_tl = CAR_STATE_MAX_SPEED
+                elif self.tl_state == TrafficLight.RED:
+                    if self.car_state_tl == CAR_STATE_OVERDIVE: 
+                        self.car_state_tl = CAR_STATE_OVERDIVE
+                    elif dist_tl < 0.1 and current_velocity > 1*KMPH2MPS:
+                        self.car_state_tl = CAR_STATE_OVERDIVE
+                    else:
+                        self.car_state_tl = CAR_STATE_STOP
+                else: # The |UNKNOWN" case. Always step on it!
+                    self.car_state_tl = CAR_STATE_MAX_SPEED
+ 
+        
+        # keep track of previous state. Useful in deciding speed transitioning
         self.last_tl_waypoint = self.tl_waypoint
+        self.last_tl_state = self.tl_state
         
         return
 

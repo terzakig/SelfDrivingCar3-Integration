@@ -6,7 +6,7 @@ import numpy as np
 import math
 
 
-LAT_JERK_LIMIT = 3.0
+LAT_JERK_LIMIT = 5.0
 
 class LatController(object):
     def __init__(self, wheel_base, steer_ratio, min_speed, max_lat_accel, max_steer_angle):
