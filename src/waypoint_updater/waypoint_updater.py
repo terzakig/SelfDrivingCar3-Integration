@@ -361,16 +361,16 @@ class WaypointUpdater(object):
 #            rospy.logwarn(self.dispstr)
 #            self.dispstr = "["
         current_velocity = self.current_velocity.linear.x if self.current_velocity is not None else 0.0
-#        if self.tl_waypoint is not None:
-#            dist_tl = self.distance(self.base_waypoints, index, self.tl_waypoint)
-#            # show more useful info
-#            #rospy.logwarn("Distance to Red TL: {0:.3f} m, vel {1:.2f} km/h, wp ix {2}".format(
-#            #                                        dist_tl, current_velocity*3.6, self.tl_waypoint))
-#            rospy.logwarn("Distance to Red TL: {0:.3f} m, vel {1:.2f} km/h, wp car {2}, wp tl {3}, car_x {4:.3f}, car_y {5:.3f}".format(
-#                                                    dist_tl, current_velocity*3.6, index, self.tl_waypoint, self.car_x, self.car_y))
-#        else:
-#            rospy.logwarn("Distance to Red TL: ---- m, vel {0:.2f} km/h, wp car {1}, wp tl {2}, car_x {3:.3f}, car_y {4:.3f}".format(
-#                                                    current_velocity*3.6, index, self.tl_waypoint, self.car_x, self.car_y))
+        if self.tl_waypoint is not None:
+            dist_tl = self.distance(self.base_waypoints, index, self.tl_waypoint)
+            # show more useful info
+            #rospy.logwarn("Distance to Red TL: {0:.3f} m, vel {1:.2f} km/h, wp ix {2}".format(
+            #                                        dist_tl, current_velocity*3.6, self.tl_waypoint))
+            rospy.logwarn("Distance to TL: {0:.3f} m, vel {1:.2f} km/h".format(
+                                                    dist_tl, current_velocity*3.6))
+        else:
+            rospy.logwarn("Distance to TL: ---- m, vel {0:.2f} km/h".format(
+                                                    current_velocity*3.6))
         for i in range(LOOKAHEAD_WPS):
             # index of the trailing waypoints 
             wp = Waypoint()
