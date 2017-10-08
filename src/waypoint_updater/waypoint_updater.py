@@ -84,6 +84,9 @@ class WaypointUpdater(object):
         self.last_tl_waypoint = None
         self.tl_state = TrafficLight.UNKNOWN
         self.last_tl_state = TrafficLight.UNKNOWN
+        # Keep track of last max speed for traffic light behavior
+        self.last_max_spd = 2 
+        
 
         self.loop()
 
@@ -383,14 +386,15 @@ class WaypointUpdater(object):
             if self.tl_waypoint is None: # no red light
                 wp.twist.twist.linear.x = max_spd# don't go to fast
             elif self.tl_state == TrafficLight.YELLOW and self.last_tl_state == TrafficLight.GREEN:
-                wp.twist.twist.linear.x = max_spd / 2
+                wp.twist.twist.linear.x = max_spd / 2 # be cautious
+            elif self.tl_state == TrafficLight.YELLOW and self.last_tl_state == TrafficLight.YELLOW:
+                wp.twist.twist.linear.x = 2.0 * max_spd / 3 # Be mildly cautious
             elif self.tl_state == TrafficLight.YELLOW and self.last_tl_state == TrafficLight.RED:
-                wp.twist.twist.linear.x = max_spd
+                wp.twist.twist.linear.x = max_spd # Leaving a red light. Give it all you have got!
             elif self.tl_state == TrafficLight.YELLOW and self.last_tl_state == TrafficLight.UNKNOWN:
-                wp.twist.twist.linear.x = max_spd / 2
+                wp.twist.twist.linear.x = max_spd / 2   # be cautious. Probably a red light ahead
             elif self.tl_state == TrafficLight.GREEN:
-                wp.twist.twist.linear.x = max_spd                
-                         
+                wp.twist.twist.linear.x = max_spd                             
             elif (self.tl_state == TrafficLight.RED): # red , green or yellow
                 #rospy.logwarn("Index of the traffic light waypoint : %i", self.tl_waypoint)
                 dist_tl = self.distance(self.base_waypoints, index, self.tl_waypoint)
@@ -399,7 +403,7 @@ class WaypointUpdater(object):
                 # stop vehicle if vehicle is almost standing and target speed is very low for waypoint
                 if current_velocity < 0.25 and wp.twist.twist.linear.x < 0.25:
                     wp.twist.twist.linear.x = 0.0
-            else: 
+            else: # The |UNKNOWN" case. Always step on it!
                 wp.twist.twist.linear.x = max_spd   
             # add the waypoint to the list
             msg.waypoints.append(wp)
